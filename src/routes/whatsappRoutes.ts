@@ -249,10 +249,15 @@ router.post('/test-message', async (req: Request, res: Response): Promise<any> =
   const tokenToUse = sender.system_user_token || config.meta.systemUserToken;
   const tplName = templateName || 'dlb_exclusive_deals';
 
+  const cleanPhone = String(recipientPhone || '').replace(/[^\d]/g, '');
+  if (!cleanPhone) {
+    return res.status(400).json({ success: false, error: 'Invalid recipient phone number format.' });
+  }
+
   const sendRes = await MetaWhatsAppService.sendTemplateMessage({
     phoneNumberId: sender.phone_number_id,
     systemUserToken: tokenToUse,
-    to: recipientPhone.replace(/[^\d]/g, ''),
+    to: cleanPhone,
     templateName: tplName,
     languageCode: 'en_US',
     variables: ['Valued Client']
