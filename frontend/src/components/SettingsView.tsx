@@ -1,37 +1,40 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
-import { Phone, User, Building, RefreshCw, Key, CheckCircle, AlertTriangle, XCircle, Send, Copy, ShieldCheck } from 'lucide-react';
+import { Phone, User, Building, RefreshCw, CheckCircle, Send, LogOut, Loader2 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
   const [status, setStatus] = useState<any | null>(null);
-  const [phoneNum, setPhoneNum] = useState('+91 98765 00000');
+  const [phoneNum, setPhoneNum] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [testSending, setTestSending] = useState(false);
   const [testRecipient, setTestRecipient] = useState('');
-  const [bannerMessage, setBannerMessage] = useState<{ type: 'success' | 'error' | 'info' | 'warning'; text: string } | null>(null);
+  const [bannerMessage, setBannerMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
-  // Meta Cloud API details
-  const [wabaId, setWabaId] = useState('');
-  const [phoneId, setPhoneId] = useState('');
-  const [token, setToken] = useState('');
-  const [showConfig, setShowConfig] = useState(true);
-  const [copiedWebhook, setCopiedWebhook] = useState(false);
+  const pollTimerRef = useRef<any>(null);
 
   const loadStatus = async () => {
     try {
       const data = await api.getWhatsAppStatus();
       setStatus(data);
-      if (data.displayPhoneNumber) setPhoneNum(data.displayPhoneNumber);
-      if (data.wabaId) setWabaId(data.wabaId);
-      if (data.phoneNumberId) setPhoneId(data.phoneNumberId);
+      if (data.displayPhoneNumber && data.displayPhoneNumber !== '+91 98765 00000') {
+        setPhoneNum(data.displayPhoneNumber);
+      }
     } catch (err: any) {
-      console.error(err);
-      setBannerMessage({ type: 'error', text: `Failed to load WhatsApp status: ${err.message}` });
+      console.error('Failed to load WhatsApp status:', err);
     }
   };
 
   useEffect(() => {
     loadStatus();
+
+    // Auto-poll status every 3 seconds so scanning the QR instantly triggers CONNECTED
+    pollTimerRef.current = setInterval(() => {
+      loadStatus();
+    }, 3000);
+
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
   }, []);
 
   const handleVerify = async () => {
@@ -41,154 +44,73 @@ export const SettingsView: React.FC = () => {
       const result = await api.verifyWhatsApp();
       await loadStatus();
       if (result.connected) {
-        setBannerMessage({ type: 'success', text: `WhatsApp Business connected successfully! Messaging Tier: ${result.messagingTier || 'TIER_1K'}` });
-      } else if (result.state === 'ACTION_REQUIRED') {
-        setBannerMessage({ type: 'warning', text: result.errorDetail || 'Action Required: Incomplete Meta credentials or authorization.' });
+        setBannerMessage({ type: 'success', text: 'WhatsApp is connected and active!' });
       } else {
-        setBannerMessage({ type: 'error', text: result.errorDetail || `Connection status: ${result.state}` });
+        setBannerMessage({ type: 'info', text: 'Please scan the displayed QR code with WhatsApp on your phone.' });
       }
     } catch (err: any) {
-      setBannerMessage({ type: 'error', text: err.message || 'Verification diagnostic check failed.' });
-    } finally {
-      setVerifying(false);
-    }
-  };
-
-  const handleSaveMeta = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setVerifying(true);
-    setBannerMessage(null);
-    try {
-      const res = await api.connectWhatsApp({
-        wabaId,
-        phoneNumberId: phoneId,
-        systemUserToken: token,
-        displayPhoneNumber: phoneNum
-      });
-      await loadStatus();
-      if (res.success) {
-        setBannerMessage({ type: 'success', text: 'WhatsApp Business credentials verified and connected successfully!' });
-      } else {
-        setBannerMessage({
-          type: 'warning',
-          text: res.status?.errorDetail || 'Credentials saved, but Meta verification requires action.'
-        });
-      }
-    } catch (err: any) {
-      setBannerMessage({ type: 'error', text: err.message || 'Failed to update credentials' });
+      setBannerMessage({ type: 'error', text: err.message || 'Verification failed' });
     } finally {
       setVerifying(false);
     }
   };
 
   const handleDisconnect = async () => {
-    if (!window.confirm('Disconnect WhatsApp Business Account from DLB AUTO MARKETING?')) return;
+    if (!window.confirm('Are you sure you want to disconnect WhatsApp?')) return;
     try {
       await api.disconnectWhatsApp();
       await loadStatus();
-      setBannerMessage({ type: 'info', text: 'WhatsApp account disconnected.' });
+      setPhoneNum('');
+      setBannerMessage({ type: 'info', text: 'WhatsApp disconnected. Scan the new QR code to reconnect.' });
     } catch (err: any) {
-      setBannerMessage({ type: 'error', text: err.message });
+      setBannerMessage({ type: 'error', text: err.message || 'Failed to disconnect' });
     }
   };
 
   const handleSendTestMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!testRecipient) {
-      setBannerMessage({ type: 'warning', text: 'Enter a valid recipient phone number (with country code) for the test message.' });
-      return;
-    }
+    if (!testRecipient) return;
     setTestSending(true);
     setBannerMessage(null);
     try {
       const res = await api.sendTestMessage(testRecipient);
       if (res.success) {
-        setBannerMessage({ type: 'success', text: `Test message dispatched! WAMID: ${res.wamid}` });
+        setBannerMessage({ type: 'success', text: `Test message sent successfully to ${testRecipient}!` });
       } else {
-        setBannerMessage({ type: 'error', text: res.error || 'Failed to send test message' });
+        setBannerMessage({ type: 'error', text: res.error || 'Failed to send message' });
       }
     } catch (err: any) {
-      setBannerMessage({ type: 'error', text: err.message || 'Test message failed' });
+      setBannerMessage({ type: 'error', text: err.message || 'Message dispatch failed' });
     } finally {
       setTestSending(false);
     }
   };
 
-  const copyWebhookUrl = () => {
-    const fullUrl = `${window.location.origin}/webhook`;
-    navigator.clipboard.writeText(fullUrl);
-    setCopiedWebhook(true);
-    setTimeout(() => setCopiedWebhook(false), 2500);
-  };
-
-  const currentState = status?.state || 'NOT_CONNECTED';
-  const isConnected = status?.connected === true && currentState === 'CONNECTED';
-
-  const getStatusBadgeClass = () => {
-    switch (currentState) {
-      case 'CONNECTED':
-        return 'status-tag done';
-      case 'CONNECTING':
-        return 'status-tag in-progress';
-      case 'ACTION_REQUIRED':
-        return 'status-tag action-required';
-      case 'CONNECTION_ERROR':
-      case 'CONFIG_ERROR':
-      case 'AUTH_EXPIRED':
-        return 'status-tag connection-error';
-      default:
-        return 'status-tag stopped';
-    }
-  };
+  const isConnected = status?.connected === true || status?.state === 'CONNECTED';
+  const qrCodeUrl = status?.qrCodeDataUrl;
 
   return (
     <div className="settings-page-container">
       <h1 className="settings-heading">Settings</h1>
 
-      {/* Inline Feedback Banner (No Alert Modals) */}
+      {/* Inline Feedback Banner */}
       {bannerMessage && (
         <div
           style={{
-            padding: '12px 16px',
+            padding: '10px 16px',
             borderRadius: '8px',
             marginBottom: '16px',
-            fontSize: '13.5px',
+            fontSize: '13px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             backgroundColor:
-              bannerMessage.type === 'success'
-                ? '#ecfdf5'
-                : bannerMessage.type === 'warning'
-                ? '#fffbeb'
-                : bannerMessage.type === 'error'
-                ? '#fef2f2'
-                : '#f0f9ff',
-            color:
-              bannerMessage.type === 'success'
-                ? '#065f46'
-                : bannerMessage.type === 'warning'
-                ? '#92400e'
-                : bannerMessage.type === 'error'
-                ? '#991b1b'
-                : '#075985',
-            border: `1px solid ${
-              bannerMessage.type === 'success'
-                ? '#a7f3d0'
-                : bannerMessage.type === 'warning'
-                ? '#fde68a'
-                : bannerMessage.type === 'error'
-                ? '#fecaca'
-                : '#bae6fd'
-            }`
+              bannerMessage.type === 'success' ? '#ecfdf5' : bannerMessage.type === 'info' ? '#f0f9ff' : '#fef2f2',
+            color: bannerMessage.type === 'success' ? '#065f46' : bannerMessage.type === 'info' ? '#075985' : '#991b1b',
+            border: `1px solid ${bannerMessage.type === 'success' ? '#a7f3d0' : bannerMessage.type === 'info' ? '#bae6fd' : '#fecaca'}`
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {bannerMessage.type === 'success' && <CheckCircle size={16} />}
-            {bannerMessage.type === 'warning' && <AlertTriangle size={16} />}
-            {bannerMessage.type === 'error' && <XCircle size={16} />}
-            <span>{bannerMessage.text}</span>
-          </div>
+          <span>{bannerMessage.text}</span>
           <button
             onClick={() => setBannerMessage(null)}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontWeight: 'bold' }}
@@ -198,258 +120,153 @@ export const SettingsView: React.FC = () => {
         </div>
       )}
 
-      {/* SECTION 1: MY WHATSAPP (FOR FORWARD) */}
+      {/* SECTION 1: MY WHATSAPP (FOR FORWARD) - Exact BizzMonitor match */}
       <div className="settings-section-title">MY WHATSAPP (FOR FORWARD)</div>
       <div className="settings-white-card">
         {/* Header row with Link your WhatsApp */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Phone size={18} color="#111b21" />
-            <span style={{ fontSize: '15px', fontWeight: 600, color: '#111b21' }}>WhatsApp Business Integration</span>
+            <span style={{ fontSize: '15px', fontWeight: 600, color: '#111b21' }}>Link your WhatsApp</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span className={getStatusBadgeClass()}>
-              {currentState}
+            <span className={`status-tag ${isConnected ? 'done' : 'stopped'}`}>
+              {isConnected ? 'CONNECTED' : (status?.state || 'NOT_CONNECTED')}
             </span>
             <button
               className="btn-bizz-secondary"
-              style={{ padding: '5px 12px', fontSize: '12.5px' }}
+              style={{ padding: '4px 10px', fontSize: '12px' }}
               onClick={handleVerify}
               disabled={verifying}
             >
-              <RefreshCw size={12} className={verifying ? 'spin' : ''} /> Verify Connection
+              <RefreshCw size={12} className={verifying ? 'spin' : ''} /> Verify
             </button>
             {isConnected && (
               <button
                 className="btn-bizz-secondary"
-                style={{ padding: '5px 12px', fontSize: '12.5px', color: '#b91c1c' }}
+                style={{ padding: '4px 10px', fontSize: '12px', color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '4px' }}
                 onClick={handleDisconnect}
               >
-                Disconnect
+                <LogOut size={12} /> Disconnect
               </button>
             )}
           </div>
         </div>
 
-        {/* Sender display phone number */}
-        <div style={{ marginBottom: '18px' }}>
-          <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-            Sender Display Phone Number
-          </label>
+        {/* Number input field matching Screenshot 2 */}
+        <div style={{ marginBottom: '20px' }}>
           <input
             type="text"
             className="composer-input-pill"
             style={{ width: '100%', borderRadius: '8px', padding: '10px 14px', border: '1px solid #d1d7db', backgroundColor: '#ffffff' }}
-            placeholder="e.g. +91 98765 00000"
-            value={phoneNum}
+            placeholder="Your WhatsApp number"
+            value={isConnected ? (status?.displayPhoneNumber || phoneNum) : phoneNum}
             onChange={(e) => setPhoneNum(e.target.value)}
+            disabled={isConnected}
           />
         </div>
 
-        {/* Diagnostic Checklist & Connection Status Information */}
-        <div
-          style={{
-            backgroundColor: '#f8fafc',
-            border: '1px solid #e2e8f0',
-            borderRadius: '10px',
-            padding: '16px',
-            marginBottom: '20px'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-            <ShieldCheck size={18} color="#008069" />
-            <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#0f172a' }}>
-              Connection Diagnostics & Coexistence Guidance
-            </span>
-          </div>
-
-          <p style={{ fontSize: '12.5px', color: '#475569', lineHeight: 1.5, marginBottom: '12px' }}>
-            DLB AUTO MARKETING integrates directly with the <strong>Meta WhatsApp Business Platform (Cloud API)</strong>.
-            If your number is registered in the <strong>WhatsApp Business mobile app</strong>, Meta provides
-            <em> Coexistence Onboarding</em> allowing this application to send approved marketing campaigns while your team continues handling personal 1:1 customer chats on mobile.
-          </p>
-
-          {/* Checklist Items */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', fontSize: '12.5px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              {status?.diagnostics?.wabaConfigured ? <CheckCircle size={15} color="#059669" /> : <AlertTriangle size={15} color="#d97706" />}
-              <span>WABA ID: <strong>{status?.diagnostics?.wabaConfigured ? 'Configured' : 'Missing / Placeholder'}</strong></span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              {status?.diagnostics?.phoneIdConfigured ? <CheckCircle size={15} color="#059669" /> : <AlertTriangle size={15} color="#d97706" />}
-              <span>Phone ID: <strong>{status?.diagnostics?.phoneIdConfigured ? 'Configured' : 'Missing / Placeholder'}</strong></span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              {status?.hasTokenConfigured ? <CheckCircle size={15} color="#059669" /> : <AlertTriangle size={15} color="#d97706" />}
-              <span>System Token: <strong>{status?.hasTokenConfigured ? 'Configured' : 'Missing'}</strong></span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <CheckCircle size={15} color="#059669" />
-              <span>Storage: <strong>Persistent SQLite (WAL)</strong></span>
-            </div>
-          </div>
-
-          {status?.connectionError && (
+        {/* QR Code Section - Dynamic Baileys WhatsApp Web QR */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px 0 20px 0' }}>
+          {isConnected ? (
             <div
               style={{
-                marginTop: '12px',
-                padding: '8px 12px',
-                backgroundColor: '#fef2f2',
-                border: '1px solid #fee2e2',
-                borderRadius: '6px',
-                color: '#991b1b',
-                fontSize: '12px'
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '40px 24px',
+                backgroundColor: '#f0fdf4',
+                borderRadius: '12px',
+                border: '1px solid #bbf7d0',
+                width: '100%',
+                maxWidth: '340px',
+                textAlign: 'center'
               }}
             >
-              <strong>Diagnostic Result:</strong> {status.connectionError}
+              <CheckCircle size={56} color="#059669" style={{ marginBottom: '14px' }} />
+              <div style={{ fontSize: '16px', fontWeight: 600, color: '#166534', marginBottom: '6px' }}>
+                WhatsApp Connected!
+              </div>
+              <div style={{ fontSize: '13px', color: '#15803d', marginBottom: '8px' }}>
+                {status?.displayPhoneNumber || 'Active WhatsApp Session'}
+              </div>
+              <div style={{ fontSize: '12px', color: '#65a30d' }}>
+                Ready to send marketing campaigns and personalized messages.
+              </div>
+            </div>
+          ) : qrCodeUrl ? (
+            <>
+              <div
+                style={{
+                  padding: '12px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #e5e2da',
+                  borderRadius: '12px',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.06)',
+                  marginBottom: '14px'
+                }}
+              >
+                <img
+                  src={qrCodeUrl}
+                  alt="WhatsApp QR Code"
+                  style={{ width: '220px', height: '220px', display: 'block', borderRadius: '4px' }}
+                />
+              </div>
+              <div style={{ fontSize: '13px', color: '#54656f', textAlign: 'center', fontWeight: 500 }}>
+                Scan from WhatsApp → Linked devices → Link a device
+              </div>
+            </>
+          ) : (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '50px 20px',
+                color: '#64748b',
+                gap: '12px'
+              }}
+            >
+              <Loader2 size={32} className="spin" color="#008069" />
+              <span style={{ fontSize: '13px' }}>Generating WhatsApp connection QR code...</span>
             </div>
           )}
         </div>
 
-        {/* Webhook Configuration Information */}
-        <div
-          style={{
-            backgroundColor: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '10px',
-            padding: '14px 16px',
-            marginBottom: '20px'
-          }}
-        >
-          <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b', marginBottom: '8px' }}>
-            Meta Webhook Configuration
-          </div>
-          <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>
-            Configure these parameters in Meta Developer Portal (App → WhatsApp → Configuration) to receive real-time delivery and read receipts:
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f8fafc', padding: '6px 12px', borderRadius: '6px' }}>
-              <span><strong>Callback URL:</strong> <code>{window.location.origin}/webhook</code></span>
-              <button
-                type="button"
-                onClick={copyWebhookUrl}
-                style={{ background: 'none', border: 'none', color: '#008069', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 600 }}
-              >
-                <Copy size={13} /> {copiedWebhook ? 'Copied!' : 'Copy'}
-              </button>
+        {/* Test Message Dispatcher (Available when connected) */}
+        {isConnected && (
+          <div style={{ borderTop: '1px solid #e9edef', paddingTop: '16px', marginTop: '10px' }}>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: '#111b21', marginBottom: '8px' }}>
+              Send a Test Message
             </div>
-            <div style={{ backgroundColor: '#f8fafc', padding: '6px 12px', borderRadius: '6px' }}>
-              <strong>Verify Token:</strong> <code>{status?.webhookVerifyToken || 'dlb_webhook_token_secure_2026'}</code>
-            </div>
-          </div>
-        </div>
-
-        {/* Credentials Form */}
-        <div style={{ marginBottom: '16px' }}>
-          <button
-            onClick={() => setShowConfig((prev) => !prev)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#008069',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            <Key size={14} /> {showConfig ? 'Hide Meta API Credentials' : 'Configure Meta Cloud API Credentials'}
-          </button>
-        </div>
-
-        {showConfig && (
-          <form onSubmit={handleSaveMeta} style={{ marginTop: '12px', borderTop: '1px solid #e9edef', paddingTop: '16px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '12px' }}>
-              <div>
-                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                  Meta WhatsApp Business Account (WABA) ID
-                </label>
-                <input
-                  type="text"
-                  className="composer-input-pill"
-                  style={{ width: '100%', borderRadius: '6px', padding: '8px 12px' }}
-                  value={wabaId}
-                  onChange={(e) => setWabaId(e.target.value)}
-                  placeholder="e.g. 109283749182736"
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                  Phone Number ID
-                </label>
-                <input
-                  type="text"
-                  className="composer-input-pill"
-                  style={{ width: '100%', borderRadius: '6px', padding: '8px 12px' }}
-                  value={phoneId}
-                  onChange={(e) => setPhoneId(e.target.value)}
-                  placeholder="e.g. 104928172948172"
-                />
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '14px' }}>
-              <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                System User Permanent Access Token
-                {status?.tokenMasked && (
-                  <span style={{ marginLeft: '8px', color: '#059669', fontWeight: 500 }}>
-                    (Currently saved: {status.tokenMasked})
-                  </span>
-                )}
-              </label>
+            <form onSubmit={handleSendTestMessage} style={{ display: 'flex', gap: '8px' }}>
               <input
-                type="password"
+                type="text"
                 className="composer-input-pill"
-                style={{ width: '100%', borderRadius: '6px', padding: '8px 12px' }}
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="EAAG... (Leave empty to keep saved token)"
+                style={{ flex: 1, borderRadius: '6px', padding: '8px 12px', fontSize: '13px' }}
+                placeholder="Recipient number with country code (e.g. +919876543210)"
+                value={testRecipient}
+                onChange={(e) => setTestRecipient(e.target.value)}
               />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button type="submit" className="btn-bizz-primary" disabled={verifying}>
-                {verifying ? 'Verifying with Meta...' : 'Save & Verify Credentials'}
+              <button
+                type="submit"
+                className="btn-bizz-primary"
+                disabled={testSending || !testRecipient}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', fontSize: '12.5px' }}
+              >
+                <Send size={13} /> {testSending ? 'Sending...' : 'Send Test'}
               </button>
-            </div>
-          </form>
-        )}
-
-        {/* Live Test Message Dispatche */}
-        <div style={{ marginTop: '24px', borderTop: '1px solid #e9edef', paddingTop: '16px' }}>
-          <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#111b21', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Send size={15} color="#008069" /> Send Real Test Message
+            </form>
           </div>
-          <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px' }}>
-            Send a live test template message to an authorized test recipient phone number to verify Meta Cloud API message dispatch.
-          </p>
-          <form onSubmit={handleSendTestMessage} style={{ display: 'flex', gap: '10px' }}>
-            <input
-              type="text"
-              className="composer-input-pill"
-              style={{ flex: 1, borderRadius: '6px', padding: '8px 12px' }}
-              placeholder="Recipient phone number with country code (e.g. +91 98765 43210)"
-              value={testRecipient}
-              onChange={(e) => setTestRecipient(e.target.value)}
-            />
-            <button
-              type="submit"
-              className="btn-bizz-secondary"
-              disabled={testSending || !testRecipient}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <Send size={13} /> {testSending ? 'Sending...' : 'Send Test'}
-            </button>
-          </form>
-        </div>
+        )}
       </div>
 
-      {/* SECTION 2: ACCOUNT */}
+      {/* SECTION 2: ACCOUNT - Exact BizzMonitor match */}
       <div className="settings-section-title">ACCOUNT</div>
       <div className="settings-white-card">
-        {/* User row matching Screenshot 3 */}
+        {/* User row */}
         <div className="settings-row-item">
           <div className="settings-item-avatar">
             <User size={20} />
@@ -460,7 +277,7 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
 
-        {/* Company row matching Screenshot 3 */}
+        {/* Company row */}
         <div className="settings-row-item">
           <div className="settings-item-avatar">
             <Building size={20} />

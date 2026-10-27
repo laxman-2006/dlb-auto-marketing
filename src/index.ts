@@ -78,9 +78,12 @@ app.get('/{*splat}', (_req, res) => {
   });
 });
 
-// Initialize database & background queue worker
+import { BaileysService } from './services/baileysService';
+
+// Initialize database, background queue worker & WhatsApp Web session
 initDatabase();
 QueueService.initQueueWorker();
+BaileysService.init();
 
 app.listen(config.port, () => {
   console.log(`====================================================`);

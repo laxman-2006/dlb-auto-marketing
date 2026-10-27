@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/database';
 import { MetaWhatsAppService } from './metaWhatsAppService';
+import { BaileysService } from './baileysService';
 import { config } from '../config/env';
 
 export class QueueService {
@@ -213,14 +214,25 @@ export class QueueService {
     try {
       const vars = item.template_parameters_json ? JSON.parse(item.template_parameters_json) : [item.customer_name || 'Customer'];
 
-      const sendResult = await MetaWhatsAppService.sendTemplateMessage({
-        phoneNumberId: item.phone_number_id,
-        systemUserToken: item.system_user_token || config.meta.systemUserToken,
-        to: item.phone_number,
-        templateName: item.template_name,
-        languageCode: item.template_language,
-        variables: vars
-      });
+      let sendResult: { success: boolean; wamid?: string; error?: string };
+
+      if (BaileysService.getStatus().connected) {
+        const template = db.prepare('SELECT body_text FROM message_templates WHERE id = ?').get(item.template_id) as any;
+        let body = template?.body_text || `Hello, this is DLB AUTO MARKETING!`;
+        vars.forEach((v: string, idx: number) => {
+          body = body.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), v);
+        });
+        sendResult = await BaileysService.sendMessage(item.phone_number, body);
+      } else {
+        sendResult = await MetaWhatsAppService.sendTemplateMessage({
+          phoneNumberId: item.phone_number_id,
+          systemUserToken: item.system_user_token || config.meta.systemUserToken,
+          to: item.phone_number,
+          templateName: item.template_name,
+          languageCode: item.template_language,
+          variables: vars
+        });
+      }
 
       if (sendResult.success && sendResult.wamid) {
         // Successful submission to WhatsApp Provider
