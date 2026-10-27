@@ -203,8 +203,8 @@ export class MetaWhatsAppService {
       }
     };
 
-    // If live token is configured, post to official endpoint
-    if (!config.meta.mockProvider && systemUserToken && !systemUserToken.startsWith('mock_')) {
+    // If live token is configured, post to official Meta Cloud API endpoint
+    if (systemUserToken && !systemUserToken.startsWith('mock_')) {
       try {
         const version = config.meta.graphApiVersion;
         const res = await axios.post(
@@ -227,9 +227,10 @@ export class MetaWhatsAppService {
         return { success: false, error: errorMsg };
       }
     } else {
-      // In simulation mode (for sandbox testing without incurring Meta fees or before setup)
-      const mockWamid = `wamid.HBgMOTE${Date.now()}A${Math.floor(Math.random() * 1000000)}B`;
-      return { success: true, wamid: mockWamid };
+      return {
+        success: false,
+        error: 'Cannot dispatch message: Meta WhatsApp Cloud API credentials not configured. Please supply a valid System User Token and Phone Number ID in Settings.'
+      };
     }
   }
 
@@ -252,7 +253,7 @@ export class MetaWhatsAppService {
       text: { body: text }
     };
 
-    if (!config.meta.mockProvider && systemUserToken && !systemUserToken.startsWith('mock_')) {
+    if (systemUserToken && !systemUserToken.startsWith('mock_')) {
       try {
         const version = config.meta.graphApiVersion;
         const res = await axios.post(
@@ -274,8 +275,10 @@ export class MetaWhatsAppService {
         return { success: false, error: errorMsg };
       }
     } else {
-      const mockWamid = `wamid.HBgMOTE${Date.now()}CHAT${Math.floor(Math.random() * 1000000)}`;
-      return { success: true, wamid: mockWamid };
+      return {
+        success: false,
+        error: 'Cannot dispatch session message: Meta WhatsApp Cloud API credentials not configured.'
+      };
     }
   }
 }
