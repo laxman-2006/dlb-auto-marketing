@@ -4,12 +4,12 @@ import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 
-const DB_DIR = path.resolve(__dirname, '../../data');
+const DB_DIR = process.env.DATA_DIR || path.resolve(__dirname, '../../data');
 if (!fs.existsSync(DB_DIR)) {
   fs.mkdirSync(DB_DIR, { recursive: true });
 }
 
-const DB_PATH = path.join(DB_DIR, 'dlb_auto_marketing.db');
+const DB_PATH = process.env.DATABASE_PATH || path.join(DB_DIR, 'dlb_auto_marketing.db');
 
 export const db: Database.Database = new Database(DB_PATH, {
   // verbose: console.log

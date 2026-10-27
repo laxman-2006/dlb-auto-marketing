@@ -26,10 +26,15 @@ router.get('/status', (req: Request, res: Response) => {
   }
 
   const isConnected = sender.connection_status === 'CONNECTED';
+  const effectiveToken = sender.system_user_token || config.meta.systemUserToken || '';
   // Obfuscate token for security (never expose full token to frontend)
-  const tokenMasked = sender.system_user_token
-    ? `${sender.system_user_token.substring(0, 6)}...${sender.system_user_token.substring(sender.system_user_token.length - 4)}`
+  const tokenMasked = effectiveToken
+    ? `${effectiveToken.substring(0, 6)}...${effectiveToken.substring(Math.max(0, effectiveToken.length - 4))}`
     : null;
+
+  const hasRealWaba = Boolean(sender.meta_waba_id && !sender.meta_waba_id.startsWith('WABA_DLB_AUTO_10928374'));
+  const hasRealPhoneId = Boolean(sender.phone_number_id && !sender.phone_number_id.startsWith('PHONE_ID_919876500000'));
+  const hasToken = Boolean(effectiveToken && effectiveToken.length > 20);
 
   res.json({
     connected: isConnected,
@@ -43,8 +48,16 @@ router.get('/status', (req: Request, res: Response) => {
     messagingTier: sender.messaging_tier,
     connectionError: sender.connection_error_detail,
     lastVerifiedAt: sender.last_verified_at,
-    hasTokenConfigured: Boolean(sender.system_user_token),
-    tokenMasked
+    hasTokenConfigured: hasToken,
+    tokenMasked,
+    webhookUrl: `/webhook`,
+    webhookVerifyToken: config.meta.webhookVerifyToken,
+    diagnostics: {
+      wabaConfigured: hasRealWaba,
+      phoneIdConfigured: hasRealPhoneId,
+      tokenConfigured: hasToken,
+      databasePersisted: true
+    }
   });
 });
 

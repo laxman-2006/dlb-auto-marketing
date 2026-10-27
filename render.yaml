@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: dlb-auto-marketing
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /api/health
+    disk:
+      name: dlb-storage
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: DATA_DIR
+        value: /app/data
+      - key: META_GRAPH_API_VERSION
+        value: v21.0
+      - key: META_WEBHOOK_VERIFY_TOKEN
+        generateValue: true
+      - key: JWT_SECRET
+        generateValue: true
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_SYSTEM_USER_TOKEN
+        sync: false
+      - key: META_WABA_ID
+        sync: false
+      - key: META_PHONE_NUMBER_ID
+        sync: false

@@ -34,10 +34,19 @@ export class MetaWhatsAppService {
     phoneNumberId: string,
     systemUserToken: string
   ): Promise<MetaConnectionStatus> {
-    if (!systemUserToken || !phoneNumberId || !wabaId) {
+    const hasWaba = Boolean(wabaId && wabaId.trim() && !wabaId.startsWith('WABA_DLB_AUTO_10928374'));
+    const hasPhoneId = Boolean(phoneNumberId && phoneNumberId.trim() && !phoneNumberId.startsWith('PHONE_ID_919876500000'));
+    const hasToken = Boolean(systemUserToken && systemUserToken.trim());
+
+    if (!hasToken || !hasPhoneId || !hasWaba) {
+      const missingFields: string[] = [];
+      if (!hasWaba) missingFields.push('Meta WABA ID');
+      if (!hasPhoneId) missingFields.push('Phone Number ID');
+      if (!hasToken) missingFields.push('System User Permanent Access Token');
+
       return {
         connected: false,
-        state: 'NOT_CONNECTED',
+        state: 'ACTION_REQUIRED',
         businessName: 'DLB AUTO MARKETING',
         wabaId: wabaId || '',
         phoneNumberId: phoneNumberId || '',
@@ -45,11 +54,11 @@ export class MetaWhatsAppService {
         qualityRating: 'UNKNOWN',
         messagingTier: 'TIER_1K',
         codeVerificationStatus: 'UNVERIFIED',
-        errorDetail: 'Missing System User Token, WABA ID, or Phone Number ID.'
+        errorDetail: `Action Required: Missing or placeholder Meta credentials (${missingFields.join(', ')}). Please provide authentic credentials from Meta Business Manager.`
       };
     }
 
-    // If live credentials are supplied, execute authentic Meta Graph API call
+    // Execute authentic Meta Graph API verification
     try {
       const version = config.meta.graphApiVersion;
       // 1. Verify Phone Number
@@ -85,32 +94,16 @@ export class MetaWhatsAppService {
         phoneNumberId,
         displayPhoneNumber: phoneData.display_phone_number || '',
         qualityRating: phoneData.quality_rating || 'GREEN',
-        messagingTier: 'TIER_1K', // Default starting tier
+        messagingTier: 'TIER_1K',
         codeVerificationStatus: phoneData.code_verification_status || 'VERIFIED'
       };
     } catch (err: any) {
-      const errorMsg = err.response?.data?.error?.message || err.message || 'Meta API connection failed';
-      let state: MetaConnectionStatus['state'] = 'CONFIG_ERROR';
+      const metaError = err.response?.data?.error;
+      const errorMsg = metaError?.message || err.message || 'Meta API connection failed';
+      let state: MetaConnectionStatus['state'] = 'CONNECTION_ERROR';
 
-      if (err.response?.data?.error?.code === 190) {
-        state = 'AUTH_EXPIRED';
-      } else if (err.response?.data?.error?.error_subcode === 463) {
-        state = 'AUTH_EXPIRED';
-      }
-
-      // If mockProvider is enabled and network/API fails, allow realistic sandbox verification for developer testing
-      if (config.meta.mockProvider && (!systemUserToken || systemUserToken.startsWith('mock_') || systemUserToken.includes('test'))) {
-        return {
-          connected: true,
-          state: 'CONNECTED',
-          businessName: 'DLB AUTO MARKETING (Meta Sandbox)',
-          wabaId,
-          phoneNumberId,
-          displayPhoneNumber: '+91 98765 00000',
-          qualityRating: 'GREEN',
-          messagingTier: 'TIER_1K (1,000 / 24h)',
-          codeVerificationStatus: 'VERIFIED'
-        };
+      if (metaError?.code === 190 || metaError?.error_subcode === 463) {
+        state = 'ACTION_REQUIRED';
       }
 
       return {
@@ -123,7 +116,7 @@ export class MetaWhatsAppService {
         qualityRating: 'UNKNOWN',
         messagingTier: 'TIER_1K',
         codeVerificationStatus: 'UNVERIFIED',
-        errorDetail: errorMsg
+        errorDetail: metaError ? `Meta API Error [${metaError.code}]: ${errorMsg}` : errorMsg
       };
     }
   }
