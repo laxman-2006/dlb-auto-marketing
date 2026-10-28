@@ -4,8 +4,10 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   WASocket,
   proto,
-  Browsers
+  Browsers,
+  makeCacheableSignalKeyStore
 } from '@whiskeysockets/baileys';
+import pino from 'pino';
 import QRCode from 'qrcode';
 import path from 'path';
 import fs from 'fs';
@@ -38,25 +40,18 @@ export class BaileysService {
       const authDir = this.getAuthDir();
       const { state, saveCreds } = await useMultiFileAuthState(authDir);
       const { version } = await fetchLatestBaileysVersion();
+      const logger = pino({ level: 'silent' });
 
       this.connectionStatus = 'CONNECTING';
 
-      // Silent logger to prevent terminal noise
-      const silentLogger = {
-        level: 'silent',
-        trace: () => {},
-        debug: () => {},
-        info: () => {},
-        warn: () => {},
-        error: () => {},
-        child: () => silentLogger
-      } as any;
-
       this.socket = makeWASocket({
         version,
-        auth: state,
+        auth: {
+          creds: state.creds,
+          keys: makeCacheableSignalKeyStore(state.keys, logger),
+        },
         printQRInTerminal: false,
-        logger: silentLogger,
+        logger,
         browser: Browsers.windows('Chrome'),
         markOnlineOnConnect: true,
         syncFullHistory: false,
@@ -205,6 +200,28 @@ export class BaileysService {
     }
   }
 
+  public static clearClosedPeerSession(cleanNumber: string) {
+    try {
+      const authDir = this.getAuthDir();
+      if (!fs.existsSync(authDir)) return;
+      const files = fs.readdirSync(authDir);
+      for (const f of files) {
+        if (f.startsWith(`session-${cleanNumber}`)) {
+          const filePath = path.join(authDir, f);
+          try {
+            const content = fs.readFileSync(filePath, 'utf8');
+            if (content.includes('"closed":') && !content.includes('"closed":-1')) {
+              fs.unlinkSync(filePath);
+              console.log(`[Baileys] Cleared stale closed session file for +${cleanNumber}: ${f}`);
+            }
+          } catch {}
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
   /**
    * Send WhatsApp message via connected session
    */
@@ -227,6 +244,9 @@ export class BaileysService {
       if (!cleanNumber) {
         return { success: false, error: 'Invalid phone number.' };
       }
+
+      // Automatically clear closed or desynced sessions so fresh prekeys are requested
+      this.clearClosedPeerSession(cleanNumber);
 
       let jid = `${cleanNumber}@s.whatsapp.net`;
       try {

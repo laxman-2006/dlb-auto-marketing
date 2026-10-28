@@ -217,19 +217,20 @@ export class QueueService {
 
       let sendResult: { success: boolean; wamid?: string; error?: string };
 
+      let body = item.custom_message;
+      if (!body || !body.trim()) {
+        const template = db.prepare('SELECT body_text FROM message_templates WHERE id = ?').get(item.template_id) as any;
+        body = template?.body_text || `Hello, this is DLB AUTO MARKETING!`;
+        vars.forEach((v: string, idx: number) => {
+          body = body.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), v);
+        });
+      }
+
       if (BaileysService.getStatus().connected) {
         // Safe anti-ban randomized jitter delay (1.2s - 2.5s)
         const jitterMs = Math.floor(Math.random() * 1300) + 1200;
         await new Promise((r) => setTimeout(r, jitterMs));
 
-        let body = item.custom_message;
-        if (!body || !body.trim()) {
-          const template = db.prepare('SELECT body_text FROM message_templates WHERE id = ?').get(item.template_id) as any;
-          body = template?.body_text || `Hello, this is DLB AUTO MARKETING!`;
-          vars.forEach((v: string, idx: number) => {
-            body = body.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), v);
-          });
-        }
         sendResult = await BaileysService.sendMessage(item.phone_number, body);
       } else {
         sendResult = await MetaWhatsAppService.sendTemplateMessage({
@@ -268,7 +269,7 @@ export class QueueService {
           item.campaign_id,
           item.sender_id,
           item.phone_number,
-          `Template: ${item.template_name}`,
+          body,
           item.template_name
         );
       } else {
