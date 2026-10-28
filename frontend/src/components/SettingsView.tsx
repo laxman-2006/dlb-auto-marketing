@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
-import { Phone, User, Building, RefreshCw, CheckCircle, Send, LogOut, Loader2 } from 'lucide-react';
+import { Phone, User, RefreshCw, CheckCircle, Send, LogOut, Loader2 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
   const [status, setStatus] = useState<any | null>(null);
@@ -279,12 +279,12 @@ export const SettingsView: React.FC = () => {
 
         {/* Company row */}
         <div className="settings-row-item">
-          <div className="settings-item-avatar">
-            <Building size={20} />
+          <div className="settings-item-avatar" style={{ padding: 0, overflow: 'hidden', border: 'none', background: 'transparent' }}>
+            <img src="/logo.jpg" alt="DLB AUTO MARKETING Logo" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '14.5px', fontWeight: 600, color: '#111b21' }}>DLB</div>
-            <div style={{ fontSize: '12.5px', color: '#54656f' }}>Reports are scoped to this company</div>
+            <div style={{ fontSize: '14.5px', fontWeight: 600, color: '#111b21' }}>DLB AUTO MARKETING</div>
+            <div style={{ fontSize: '12.5px', color: '#54656f' }}>Official organization account & campaigns</div>
           </div>
         </div>
       </div>

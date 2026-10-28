@@ -1,0 +1,18 @@
+{
+  "short_name": "DLB Auto",
+  "name": "DLB AUTO MARKETING",
+  "description": "WhatsApp Business Platform for Automotive Marketing & Campaigns",
+  "icons": [
+    {
+      "src": "/logo.jpg",
+      "type": "image/jpeg",
+      "sizes": "512x512 192x192 144x144 96x96 48x48",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#111b21",
+  "theme_color": "#0d1f3c",
+  "display": "standalone",
+  "orientation": "portrait"
+}

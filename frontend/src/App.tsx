@@ -46,7 +46,7 @@ export const App: React.FC = () => {
         {/* Brand Header */}
         <div className="sidebar-brand-header">
           <div className="brand-identity">
-            <div className="brand-avatar">D</div>
+            <img src="/logo.jpg" alt="DLB AUTO MARKETING Logo" className="brand-logo-img" />
             <span className="brand-name">DLB AUTO MARKETING</span>
           </div>
           <div className="sidebar-header-actions">
