@@ -280,12 +280,38 @@ export const SettingsView: React.FC = () => {
         {/* Company row */}
         <div className="settings-row-item">
           <div className="settings-item-avatar" style={{ padding: 0, overflow: 'hidden', border: 'none', background: 'transparent' }}>
-            <img src="/logo.jpg" alt="DLB AUTO MARKETING Logo" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
+            <img src="/logo.jpg" alt="DLB AUTO MARKETING Logo" style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', display: 'block', boxShadow: '0 0 0 1px var(--dlb-gold-accent)' }} />
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '14.5px', fontWeight: 600, color: '#111b21' }}>DLB AUTO MARKETING</div>
-            <div style={{ fontSize: '12.5px', color: '#54656f' }}>Official organization account & campaigns</div>
+            <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--dlb-navy-primary)' }}>DLB AUTO MARKETING</div>
+            <div style={{ fontSize: '12.5px', color: 'var(--dlb-text-secondary)' }}>Automotive Marketing & Smart Broadcasting</div>
           </div>
+        </div>
+      </div>
+
+      {/* SECTION 3: MESSAGING CONFIGURATION & THROTTLING */}
+      <div className="settings-section-title">MESSAGING & ANTI-BAN PROTOCOLS</div>
+      <div className="settings-white-card">
+        <div className="settings-row-item">
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--dlb-text-primary)' }}>Smart Jitter Delay (Anti-Ban)</div>
+            <div style={{ fontSize: '12.5px', color: 'var(--dlb-text-secondary)' }}>Automatically randomizes inter-message delays between 2.5s – 5.5s to keep account safe.</div>
+          </div>
+          <span className="status-tag done">ACTIVE</span>
+        </div>
+        <div className="settings-row-item">
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--dlb-text-primary)' }}>Batch Dispatch Chunk Size</div>
+            <div style={{ fontSize: '12.5px', color: 'var(--dlb-text-secondary)' }}>Processes high-volume Excel broadcasts in safe micro-batches of 25 messages.</div>
+          </div>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--dlb-navy-primary)', background: 'var(--dlb-ice-blue)', padding: '4px 10px', borderRadius: '6px' }}>25 / batch</span>
+        </div>
+        <div className="settings-row-item">
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--dlb-text-primary)' }}>Opt-in & Consent Safeguard</div>
+            <div style={{ fontSize: '12.5px', color: 'var(--dlb-text-secondary)' }}>Enforces verified consent for all campaign recipients.</div>
+          </div>
+          <span className="status-tag done">ENFORCED</span>
         </div>
       </div>
     </div>

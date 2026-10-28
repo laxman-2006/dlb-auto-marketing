@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Home,
   Settings,
@@ -6,18 +6,40 @@ import {
   Star,
   Bell,
   MessageSquare,
-  Download
+  Download,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { PersonalMessagesView } from './components/PersonalMessagesView';
 import { SettingsView } from './components/SettingsView';
+import { IntroScreen } from './components/IntroScreen';
+import { api } from './api';
 
 export const App: React.FC = () => {
+  const [showIntro, setShowIntro] = useState(true);
   const [currentView, setCurrentView] = useState<'home' | 'settings'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [showBanner, setShowBanner] = useState(true);
+  const [waConnected, setWaConnected] = useState(false);
+
+  useEffect(() => {
+    const checkWa = async () => {
+      try {
+        const res = await api.getWhatsAppStatus();
+        setWaConnected(res.connected === true || res.state === 'CONNECTED');
+      } catch (e) {
+        setWaConnected(false);
+      }
+    };
+    checkWa();
+    const interval = setInterval(checkWa, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
-    <div className="bizz-app">
+    <>
+      {showIntro && <IntroScreen onComplete={() => setShowIntro(false)} />}
+      <div className="bizz-app">
       {/* REGION A: Left Narrow Navigation Rail */}
       <nav className="left-rail">
         <div className="rail-top">
@@ -50,6 +72,14 @@ export const App: React.FC = () => {
             <span className="brand-name">DLB AUTO MARKETING</span>
           </div>
           <div className="sidebar-header-actions">
+            <span
+              className={`status-pill ${waConnected ? 'active' : 'paused'}`}
+              style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 8px', fontWeight: 600 }}
+              title={waConnected ? 'WhatsApp is online and ready' : 'WhatsApp is in standby mode'}
+            >
+              {waConnected ? <Wifi size={12} color="#059669" /> : <WifiOff size={12} color="#64748B" />}
+              {waConnected ? 'Online' : 'Standby'}
+            </span>
             <button className="header-icon-btn" title="Favourites">
               <Star size={18} />
             </button>
@@ -117,6 +147,7 @@ export const App: React.FC = () => {
         {currentView === 'settings' && <SettingsView />}
       </main>
     </div>
+    </>
   );
 };
 

@@ -22,6 +22,7 @@ import {
 import { WhoGotWhatModal } from './WhoGotWhatModal';
 import { PasteNumbersModal } from './PasteNumbersModal';
 import { UploadExcelModal } from './UploadExcelModal';
+import { CampaignProgressCard } from './CampaignProgressCard';
 
 interface ContactItem {
   id: string;
@@ -217,6 +218,14 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
     setShowTemplateModal(false);
   };
 
+  // Section 5: Real campaign metrics from backend
+  const latestCamp = feed.length > 0 ? feed[0] : null;
+  const totalEligible = latestCamp ? (latestCamp.total_recipients || 1) : 0;
+  const deliveredCount = latestCamp ? (latestCamp.delivered_count || latestCamp.sent_count || 0) : 0;
+  const failedCount = latestCamp ? (latestCamp.failed_count || 0) : 0;
+  const pendingCount = Math.max(0, totalEligible - (deliveredCount + failedCount));
+  const readCount = latestCamp?.read_count || 0;
+
   return (
     <div className="main-conversation-pane">
       {/* Top Header */}
@@ -225,10 +234,35 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
           <MessageSquare size={20} />
         </div>
         <div className="conv-header-text">
-          <div className="conv-header-title">Personal Messages</div>
-          <div className="conv-header-sub">One message — each person gets their own copy</div>
+          <div className="conv-header-title">
+            Personal Messages
+            {whatsappConnected ? (
+              <span className="status-tag done" style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                <span className="metrics-live-dot" style={{ width: 6, height: 6 }} />
+                Live WhatsApp {connectedNumber ? `(+${connectedNumber.replace(/[^\d]/g, '')})` : 'Connected'}
+              </span>
+            ) : (
+              <span className="status-tag action-required" style={{ fontSize: '11px' }}>
+                WhatsApp Standby
+              </span>
+            )}
+          </div>
+          <div className="conv-header-sub">One message — each recipient receives their own direct copy</div>
         </div>
       </header>
+
+      {/* SECTION 5: Campaign Progress Display */}
+      {latestCamp && (
+        <CampaignProgressCard
+          campaignName={latestCamp.name || 'Active Campaign'}
+          status={latestCamp.status_label || latestCamp.status || 'Active'}
+          totalRecipients={totalEligible}
+          delivered={deliveredCount}
+          pending={pendingCount}
+          failed={failedCount}
+          readCount={readCount}
+        />
+      )}
 
       {/* Floating Toast Notification */}
       {toastMessage && (
@@ -301,28 +335,29 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
       {showSearchDrawer && (
         <div
           style={{
-            backgroundColor: '#f6f5f0',
-            borderTop: '1px solid #e2ded5',
-            borderBottom: '1px solid #e2ded5',
-            padding: '12px 18px 16px 18px',
+            backgroundColor: '#ffffff',
+            borderTop: '1px solid var(--dlb-border)',
+            borderBottom: '1px solid var(--dlb-border)',
+            padding: '14px 20px 18px 20px',
+            boxShadow: '0 4px 12px rgba(16,42,67,0.06)',
             zIndex: 20
           }}
         >
           {/* Search Input Box with Done button */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
             <div
               style={{
                 flex: 1,
                 display: 'flex',
                 alignItems: 'center',
-                backgroundColor: '#ffffff',
-                border: '1.5px solid #234c38',
+                backgroundColor: 'var(--dlb-ice-blue)',
+                border: '1.5px solid var(--dlb-blue-royal)',
                 borderRadius: '8px',
-                padding: '6px 14px',
+                padding: '8px 16px',
                 gap: '10px'
               }}
             >
-              <Search size={18} color="#54656f" />
+              <Search size={18} color="var(--dlb-blue-royal)" />
               <input
                 ref={searchInputRef}
                 type="text"
@@ -334,14 +369,14 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
                   outline: 'none',
                   width: '100%',
                   fontSize: '14px',
-                  color: '#111b21',
+                  color: 'var(--dlb-text-primary)',
                   backgroundColor: 'transparent'
                 }}
               />
               {searchQuery && (
                 <X
                   size={16}
-                  color="#8696a0"
+                  color="var(--dlb-text-muted)"
                   style={{ cursor: 'pointer' }}
                   onClick={() => setSearchQuery('')}
                 />
@@ -351,14 +386,15 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
             <button
               onClick={() => setShowSearchDrawer(false)}
               style={{
-                backgroundColor: '#163e2b',
+                background: 'linear-gradient(135deg, var(--dlb-navy-primary) 0%, var(--dlb-blue-royal) 100%)',
                 color: '#ffffff',
                 border: 'none',
-                borderRadius: '6px',
-                padding: '8px 20px',
+                borderRadius: '8px',
+                padding: '9px 22px',
                 fontSize: '13.5px',
                 fontWeight: 600,
-                cursor: 'pointer'
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(16,42,67,0.2)'
               }}
             >
               Done
@@ -369,11 +405,12 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
           <div
             style={{
               fontSize: '12.5px',
-              color: '#54656f',
-              backgroundColor: '#eae8e0',
-              padding: '6px 12px',
+              color: 'var(--dlb-text-secondary)',
+              backgroundColor: 'var(--dlb-ice-blue)',
+              padding: '8px 14px',
               borderRadius: '6px',
-              marginBottom: '10px',
+              border: '1px solid var(--dlb-border)',
+              marginBottom: '12px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between'
@@ -381,7 +418,7 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
           >
             <span>
               {whatsappConnected
-                ? `✓ WhatsApp is connected (${connectedNumber || 'Active'}). Live chat search enabled.`
+                ? `✓ WhatsApp is connected (${connectedNumber || 'Active'}). Live contact search enabled.`
                 : 'WhatsApp is not linked, so its groups are not shown yet.'}
             </span>
             {!whatsappConnected && onNavigateSettings && (
@@ -389,13 +426,13 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
                 onClick={onNavigateSettings}
                 style={{
                   background: '#ffffff',
-                  border: '1px solid #d1d7db',
-                  padding: '2px 8px',
+                  border: '1px solid var(--dlb-blue-royal)',
+                  padding: '3px 10px',
                   borderRadius: '4px',
                   fontSize: '12px',
                   fontWeight: 600,
                   cursor: 'pointer',
-                  color: '#008069'
+                  color: 'var(--dlb-blue-royal)'
                 }}
               >
                 Link WhatsApp
