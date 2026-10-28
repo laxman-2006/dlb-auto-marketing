@@ -128,6 +128,7 @@ export class QueueService {
         c.sender_id,
         c.template_id,
         c.name as campaign_name,
+        c.custom_message,
         t.name as template_name,
         t.language as template_language,
         t.status as template_status,
@@ -155,8 +156,8 @@ export class QueueService {
       return;
     }
 
-    // Strict template enforcement: Template MUST be APPROVED by Meta
-    if (nextRecipient.template_status !== 'APPROVED') {
+    // Strict template enforcement: Template MUST be APPROVED by Meta (only if sending via Meta Cloud API)
+    if (!BaileysService.getStatus().connected && nextRecipient.template_status !== 'APPROVED') {
       db.prepare(`
         UPDATE campaign_recipients
         SET status = 'FAILED', error_message = 'Template is not approved by Meta (${nextRecipient.template_status})'
@@ -217,11 +218,14 @@ export class QueueService {
       let sendResult: { success: boolean; wamid?: string; error?: string };
 
       if (BaileysService.getStatus().connected) {
-        const template = db.prepare('SELECT body_text FROM message_templates WHERE id = ?').get(item.template_id) as any;
-        let body = template?.body_text || `Hello, this is DLB AUTO MARKETING!`;
-        vars.forEach((v: string, idx: number) => {
-          body = body.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), v);
-        });
+        let body = item.custom_message;
+        if (!body || !body.trim()) {
+          const template = db.prepare('SELECT body_text FROM message_templates WHERE id = ?').get(item.template_id) as any;
+          body = template?.body_text || `Hello, this is DLB AUTO MARKETING!`;
+          vars.forEach((v: string, idx: number) => {
+            body = body.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), v);
+          });
+        }
         sendResult = await BaileysService.sendMessage(item.phone_number, body);
       } else {
         sendResult = await MetaWhatsAppService.sendTemplateMessage({

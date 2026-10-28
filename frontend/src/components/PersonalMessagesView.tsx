@@ -1,52 +1,97 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
 import {
   MessageSquare,
-  Paperclip,
-  Send,
-  FileText,
   Search,
   Upload,
   Edit3,
   Download,
   Image,
   Mic,
+  Paperclip,
+  FileText,
+  Send,
   ChevronDown,
-  X
+  X,
+  User,
+  Plus,
+  Check,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 import { WhoGotWhatModal } from './WhoGotWhatModal';
 import { PasteNumbersModal } from './PasteNumbersModal';
 import { UploadExcelModal } from './UploadExcelModal';
 
-export const PersonalMessagesView: React.FC = () => {
+interface ContactItem {
+  id: string;
+  name: string;
+  phone: string;
+  tag?: string;
+}
+
+interface PersonalMessagesViewProps {
+  onNavigateSettings?: () => void;
+}
+
+export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNavigateSettings }) => {
   const [feed, setFeed] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [messageText, setMessageText] = useState('');
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
-  const [showAttachMenu, setShowAttachMenu] = useState(false);
-  const [activeWhoGotWhatCampId, setActiveWhoGotWhatCampId] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
 
-  // Modals
+  // WhatsApp connection status
+  const [whatsappConnected, setWhatsappConnected] = useState(false);
+  const [connectedNumber, setConnectedNumber] = useState('');
+
+  // Search WhatsApp Drawer matching Screenshot 2
+  const [showSearchDrawer, setShowSearchDrawer] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<ContactItem[]>([]);
+  const [selectedRecipients, setSelectedRecipients] = useState<ContactItem[]>([]);
+
+  // Modals & Popups
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [showExcelModal, setShowExcelModal] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [templates, setTemplates] = useState<any[]>([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
-  const [sending, setSending] = useState(false);
+  const [activeWhoGotWhatCampId, setActiveWhoGotWhatCampId] = useState<string | null>(null);
 
-  const loadFeed = async () => {
+  // Inline feedback toast
+  const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const showToast = (type: 'success' | 'error' | 'info', text: string) => {
+    setToastMessage({ type, text });
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const loadStatus = async () => {
     try {
-      const res = await api.getCampaignsFeed();
-      setFeed(res.feed || []);
+      const st = await api.getWhatsAppStatus();
+      setWhatsappConnected(st.connected === true || st.state === 'CONNECTED');
+      if (st.displayPhoneNumber) setConnectedNumber(st.displayPhoneNumber);
     } catch (err) {
       console.error(err);
     }
   };
 
+  const loadFeed = async () => {
+    try {
+      const data = await api.getCampaignsFeed();
+      setFeed(data.feed || []);
+    } catch (err) {
+      console.error('Failed to load campaign feed:', err);
+    }
+  };
+
   const loadTemplates = async () => {
     try {
-      const res = await api.getTemplates();
-      setTemplates(res.templates || []);
-      const approved = res.templates?.find((t: any) => t.status === 'APPROVED');
+      const data = await api.getTemplates();
+      setTemplates(data.templates || []);
+      const approved = (data.templates || []).find((t: any) => t.status === 'APPROVED');
       if (approved) setSelectedTemplateId(approved.id);
     } catch (err) {
       console.error(err);
@@ -56,28 +101,99 @@ export const PersonalMessagesView: React.FC = () => {
   useEffect(() => {
     loadFeed();
     loadTemplates();
-    const interval = setInterval(loadFeed, 5000);
+    loadStatus();
+    const interval = setInterval(loadFeed, 4000);
     return () => clearInterval(interval);
   }, []);
 
+  // Search contacts as user types matching Screenshot 2
+  useEffect(() => {
+    if (!showSearchDrawer) return;
+
+    const delayDebounce = setTimeout(async () => {
+      try {
+        const res = await api.getContacts(1, 20, 'all', searchQuery.trim());
+        const mapped: ContactItem[] = (res.contacts || []).map((c: any) => ({
+          id: c.id,
+          name: c.name || 'Valued Customer',
+          phone: c.normalized_phone || c.raw_phone,
+          tag: c.id === 'laxman_admin_contact' ? 'User & Access' : (c.consent_status === 'OPTED_IN' ? 'Customer' : 'Contact')
+        }));
+
+        // If user typed numbers and no exact match, add synthetic option
+        const rawDigits = searchQuery.replace(/[^\d]/g, '');
+        if (rawDigits.length >= 5) {
+          const formatted = rawDigits.length === 10 ? `91${rawDigits}` : rawDigits;
+          const alreadyInList = mapped.some((m) => m.phone.replace(/[^\d]/g, '').includes(rawDigits));
+          if (!alreadyInList) {
+            mapped.unshift({
+              id: `custom_${rawDigits}`,
+              name: `+${formatted}`,
+              phone: formatted,
+              tag: 'New Number'
+            });
+          }
+        }
+
+        setSearchResults(mapped);
+      } catch (err) {
+        console.error('Contact search error:', err);
+      }
+    }, 200);
+
+    return () => clearTimeout(delayDebounce);
+  }, [searchQuery, showSearchDrawer]);
+
+  const handleOpenSearchDrawer = () => {
+    setShowAttachMenu(false);
+    setShowSearchDrawer(true);
+    setSearchQuery('');
+    setTimeout(() => searchInputRef.current?.focus(), 100);
+  };
+
+  const handleToggleRecipient = (contact: ContactItem) => {
+    const isSelected = selectedRecipients.some((r) => r.phone === contact.phone);
+    if (isSelected) {
+      setSelectedRecipients((prev) => prev.filter((r) => r.phone !== contact.phone));
+    } else {
+      setSelectedRecipients((prev) => [...prev, contact]);
+    }
+  };
+
+  const handleRemoveRecipient = (phone: string) => {
+    setSelectedRecipients((prev) => prev.filter((r) => r.phone !== phone));
+  };
+
   const handleSendBroadcast = async () => {
     if (!messageText.trim() && !attachedFile) {
-      alert('Please enter a message or attach a file.');
+      showToast('error', 'Please enter a message or attach a file.');
       return;
     }
+
+    if (selectedRecipients.length === 0) {
+      showToast('info', 'Please search and select at least one recipient first.');
+      setShowSearchDrawer(true);
+      return;
+    }
+
     setSending(true);
     try {
+      const recipientPhones = selectedRecipients.map((r) => r.phone);
       await api.quickSend({
         messageText: messageText.trim() || 'Photo Attachment',
         mediaName: attachedFile ? attachedFile.name : undefined,
+        recipientPhones,
         templateId: selectedTemplateId
       });
+
       setMessageText('');
       setAttachedFile(null);
-      setShowAttachMenu(false);
+      setSelectedRecipients([]);
+      setShowSearchDrawer(false);
+      showToast('success', `Message sent to ${recipientPhones.length} recipient${recipientPhones.length > 1 ? 's' : ''}!`);
       loadFeed();
     } catch (err: any) {
-      alert(err.message || 'Failed to dispatch broadcast');
+      showToast('error', err.message || 'Failed to dispatch message');
     } finally {
       setSending(false);
     }
@@ -103,7 +219,7 @@ export const PersonalMessagesView: React.FC = () => {
 
   return (
     <div className="main-conversation-pane">
-      {/* Top Header matching Screenshot 1 */}
+      {/* Top Header */}
       <header className="conversation-header">
         <div className="conv-header-avatar">
           <MessageSquare size={20} />
@@ -114,58 +230,57 @@ export const PersonalMessagesView: React.FC = () => {
         </div>
       </header>
 
-      {/* Central Feed matching Screenshot 1 */}
+      {/* Floating Toast Notification */}
+      {toastMessage && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '70px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 100,
+            padding: '10px 20px',
+            borderRadius: '24px',
+            fontSize: '13.5px',
+            fontWeight: 500,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.15)',
+            backgroundColor: toastMessage.type === 'success' ? '#166534' : toastMessage.type === 'error' ? '#991b1b' : '#0f172a',
+            color: '#ffffff'
+          }}
+        >
+          {toastMessage.type === 'success' && <CheckCircle2 size={16} />}
+          {toastMessage.type === 'error' && <AlertCircle size={16} />}
+          <span>{toastMessage.text}</span>
+        </div>
+      )}
+
+      {/* Central Campaign Feed */}
       <div className="campaign-feed">
         {feed.map((card) => {
           const isDone = card.status === 'COMPLETED' || card.status_label === 'Done';
-          const isStopped = card.status === 'PAUSED' || card.status === 'CANCELLED' || card.status_label === 'Stopped';
+          const isStopped = card.status === 'STOPPED' || card.status_label === 'Stopped';
 
           return (
-            <div key={card.id} className="message-card">
-              {/* If message starts with URL, display preview link */}
-              {card.message_text.startsWith('http') && (
-                <div className="card-link-header">
-                  {card.message_text.split('\n')[0]}
-                </div>
-              )}
+            <div key={card.id} className="campaign-bubble-card">
+              <div className="card-message-content">{card.message_snippet}</div>
 
-              {/* Message Content */}
-              <div className="card-text-body">
-                {card.message_text.startsWith('http')
-                  ? card.message_text.split('\n').slice(1).join('\n').trim()
-                  : card.message_text}
+              <div className="card-recipient-count">
+                <span className={`status-tag ${isDone ? 'done' : isStopped ? 'stopped' : 'in-progress'}`}>
+                  {card.status_label || card.status}
+                </span>
+                <span style={{ fontSize: '12.5px', fontWeight: 600, color: '#374151' }}>
+                  {card.total_count} {card.total_count === 1 ? 'person' : 'people'}
+                </span>
               </div>
 
-              {/* Optional media attachment pill */}
-              {card.media_name && (
-                <div className="card-attachment-pill">
-                  <Image size={13} /> {card.media_name}
-                </div>
-              )}
-
-              {/* Status and Timestamp row */}
-              <div className="card-meta-row">
-                <div className="status-badge-pill">
-                  <span className={`status-tag ${isDone ? 'done' : isStopped ? 'stopped' : 'in-progress'}`}>
-                    {card.status_label}
-                  </span>
-                  <span style={{ fontSize: '12px', color: '#54656f', fontWeight: 600 }}>
-                    {card.people_count}
-                  </span>
-                </div>
-                <div className="card-timestamp">
-                  {new Date(card.created_at).toLocaleString([], {
-                    day: 'numeric',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </div>
-              </div>
-
-              {/* Summary line */}
               <div className="card-summary-line">
-                {card.status_summary}
+                <span style={{ color: '#4b5563' }}>{card.summary_line}</span>
+                <span className="card-timestamp" style={{ marginLeft: 'auto' }}>
+                  {card.created_time}
+                </span>
               </div>
 
               {/* Who Got What button */}
@@ -182,17 +297,268 @@ export const PersonalMessagesView: React.FC = () => {
         })}
       </div>
 
-      {/* Attachment Popup Menu matching Screenshot 2 */}
+      {/* SEARCH WHATSAPP DRAWER - Exactly matching Screenshot 2 */}
+      {showSearchDrawer && (
+        <div
+          style={{
+            backgroundColor: '#f6f5f0',
+            borderTop: '1px solid #e2ded5',
+            borderBottom: '1px solid #e2ded5',
+            padding: '12px 18px 16px 18px',
+            zIndex: 20
+          }}
+        >
+          {/* Search Input Box with Done button */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+            <div
+              style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                backgroundColor: '#ffffff',
+                border: '1.5px solid #234c38',
+                borderRadius: '8px',
+                padding: '6px 14px',
+                gap: '10px'
+              }}
+            >
+              <Search size={18} color="#54656f" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search WhatsApp (chats, numbers, groups)"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  border: 'none',
+                  outline: 'none',
+                  width: '100%',
+                  fontSize: '14px',
+                  color: '#111b21',
+                  backgroundColor: 'transparent'
+                }}
+              />
+              {searchQuery && (
+                <X
+                  size={16}
+                  color="#8696a0"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setSearchQuery('')}
+                />
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowSearchDrawer(false)}
+              style={{
+                backgroundColor: '#163e2b',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '8px 20px',
+                fontSize: '13.5px',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              Done
+            </button>
+          </div>
+
+          {/* Connection Status notice matching Screenshot 2 */}
+          <div
+            style={{
+              fontSize: '12.5px',
+              color: '#54656f',
+              backgroundColor: '#eae8e0',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              marginBottom: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}
+          >
+            <span>
+              {whatsappConnected
+                ? `✓ WhatsApp is connected (${connectedNumber || 'Active'}). Live chat search enabled.`
+                : 'WhatsApp is not linked, so its groups are not shown yet.'}
+            </span>
+            {!whatsappConnected && onNavigateSettings && (
+              <button
+                onClick={onNavigateSettings}
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #d1d7db',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  color: '#008069'
+                }}
+              >
+                Link WhatsApp
+              </button>
+            )}
+          </div>
+
+          {/* Search Results List */}
+          <div
+            style={{
+              maxHeight: '220px',
+              overflowY: 'auto',
+              backgroundColor: '#ffffff',
+              borderRadius: '8px',
+              border: '1px solid #e5e2da',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.04)'
+            }}
+          >
+            {searchResults.length > 0 ? (
+              searchResults.map((item) => {
+                const isSelected = selectedRecipients.some((r) => r.phone === item.phone);
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => handleToggleRecipient(item)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 14px',
+                      borderBottom: '1px solid #f0eee6',
+                      cursor: 'pointer',
+                      backgroundColor: isSelected ? '#f0fdf4' : '#ffffff',
+                      transition: 'background-color 0.1s'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div
+                        style={{
+                          width: '36px',
+                          height: '36px',
+                          borderRadius: '50%',
+                          backgroundColor: '#e9ecef',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#54656f'
+                        }}
+                      >
+                        <User size={18} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: 600, color: '#111b21' }}>
+                          {item.name}
+                        </div>
+                        <div style={{ fontSize: '12.5px', color: '#667781' }}>
+                          +{item.phone.replace(/[^\d]/g, '')} {item.tag ? `· ${item.tag}` : ''}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: isSelected ? '#008069' : '#f0f2f5',
+                        color: isSelected ? '#ffffff' : '#54656f'
+                      }}
+                    >
+                      {isSelected ? <Check size={16} /> : <Plus size={16} />}
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div style={{ padding: '20px', textAlign: 'center', fontSize: '13px', color: '#667781' }}>
+                {searchQuery ? `No contacts matching "${searchQuery}"` : 'Type a name or phone number to search...'}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Selected Recipients Chips Bar */}
+      {selectedRecipients.length > 0 && (
+        <div
+          style={{
+            backgroundColor: '#ffffff',
+            borderTop: '1px solid #e2ded5',
+            padding: '8px 18px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            flexWrap: 'wrap'
+          }}
+        >
+          <span style={{ fontSize: '12px', fontWeight: 600, color: '#54656f' }}>To:</span>
+          {selectedRecipients.map((r) => (
+            <span
+              key={r.phone}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                backgroundColor: '#e8f5e9',
+                color: '#1b5e20',
+                padding: '4px 10px',
+                borderRadius: '16px',
+                fontSize: '12px',
+                fontWeight: 500
+              }}
+            >
+              <User size={12} /> {r.name} (+{r.phone.replace(/[^\d]/g, '')})
+              <X
+                size={12}
+                style={{ cursor: 'pointer' }}
+                onClick={() => handleRemoveRecipient(r.phone)}
+              />
+            </span>
+          ))}
+
+          <button
+            onClick={() => setShowSearchDrawer(true)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#008069',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            + Add more
+          </button>
+
+          <button
+            onClick={() => setSelectedRecipients([])}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#8696a0',
+              fontSize: '11.5px',
+              cursor: 'pointer',
+              marginLeft: 'auto'
+            }}
+          >
+            Clear all
+          </button>
+        </div>
+      )}
+
+      {/* Attachment Popup Menu matching Screenshot 1 */}
       {showAttachMenu && (
         <div className="attachment-popup-menu">
           <div className="menu-section-title">NUMBERS</div>
           <div className="menu-items-grid">
             <button
               className="menu-action-item"
-              onClick={() => {
-                setShowAttachMenu(false);
-                alert('Searching authorized WhatsApp contacts...');
-              }}
+              onClick={handleOpenSearchDrawer}
             >
               <Search size={15} /> Search WhatsApp (chats, numbers, groups)
             </button>
@@ -235,7 +601,7 @@ export const PersonalMessagesView: React.FC = () => {
             <button
               className="menu-action-item"
               onClick={() => {
-                alert('Voice recording: Speak to record or choose an audio note.');
+                showToast('info', 'Voice recording available on supported mobile browsers.');
                 setShowAttachMenu(false);
               }}
             >
@@ -252,7 +618,7 @@ export const PersonalMessagesView: React.FC = () => {
           className="composer-btn-icon"
           onClick={() => setShowAttachMenu((prev) => !prev)}
           style={{ color: showAttachMenu ? '#008069' : undefined }}
-          title="Attach files or import numbers"
+          title="Attach files or search numbers"
         >
           <Paperclip size={20} />
         </button>
@@ -273,7 +639,11 @@ export const PersonalMessagesView: React.FC = () => {
           <textarea
             className="composer-input-pill"
             rows={1}
-            placeholder="Type a personal message to send to each recipient..."
+            placeholder={
+              selectedRecipients.length > 0
+                ? `Type message to ${selectedRecipients.length} recipient${selectedRecipients.length > 1 ? 's' : ''}...`
+                : 'Type a personal message to send...'
+            }
             value={messageText}
             onChange={(e) => setMessageText(e.target.value)}
             onKeyDown={(e) => {
@@ -299,7 +669,7 @@ export const PersonalMessagesView: React.FC = () => {
           className="composer-send-btn"
           onClick={handleSendBroadcast}
           disabled={sending || (!messageText.trim() && !attachedFile)}
-          title="Send broadcast"
+          title="Send message"
         >
           <Send size={18} />
         </button>
@@ -318,7 +688,7 @@ export const PersonalMessagesView: React.FC = () => {
         <PasteNumbersModal
           onClose={() => setShowPasteModal(false)}
           onSuccess={(cnt) => {
-            alert(`Ready to broadcast to ${cnt} newly pasted contacts!`);
+            showToast('success', `Ready to broadcast to ${cnt} newly pasted contacts!`);
           }}
         />
       )}
@@ -328,7 +698,7 @@ export const PersonalMessagesView: React.FC = () => {
         <UploadExcelModal
           onClose={() => setShowExcelModal(false)}
           onSuccess={(summary) => {
-            alert(`Excel imported! ${summary.eligibleForMarketing.toLocaleString()} eligible contacts available.`);
+            showToast('success', `Excel imported! ${summary.eligibleForMarketing.toLocaleString()} contacts available.`);
           }}
         />
       )}
@@ -338,7 +708,7 @@ export const PersonalMessagesView: React.FC = () => {
         <div className="modal-overlay" onClick={() => setShowTemplateModal(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <div className="modal-title">Select Meta Approved Template</div>
+              <div className="modal-title">Select Message Template</div>
               <button onClick={() => setShowTemplateModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
                 <X size={20} />
               </button>

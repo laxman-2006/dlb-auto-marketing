@@ -98,13 +98,15 @@ router.post('/test-message', async (req: Request, res: Response): Promise<any> =
   const sendRes = await BaileysService.sendMessage(cleanPhone, text);
 
   if (sendRes.success && sendRes.wamid) {
+    const senderRecord = db.prepare('SELECT id FROM whatsapp_senders WHERE is_default = 1 LIMIT 1').get() as any;
     db.prepare(`
       INSERT INTO message_records (
         id, wamid, sender_id, recipient_phone, direction, message_type, content, status, pricing_category, sent_at
-      ) VALUES (?, ?, 'default_sender', ?, 'OUTBOUND', 'TEXT', ?, 'SENT', 'marketing', CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, 'OUTBOUND', 'TEXT', ?, 'SENT', 'marketing', CURRENT_TIMESTAMP)
     `).run(
       uuidv4(),
       sendRes.wamid,
+      senderRecord?.id,
       recipientPhone,
       text
     );

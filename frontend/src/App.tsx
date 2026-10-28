@@ -113,7 +113,7 @@ export const App: React.FC = () => {
 
       {/* REGION C: Main Content Workspace */}
       <main style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {currentView === 'home' && <PersonalMessagesView />}
+        {currentView === 'home' && <PersonalMessagesView onNavigateSettings={() => setCurrentView('settings')} />}
         {currentView === 'settings' && <SettingsView />}
       </main>
     </div>

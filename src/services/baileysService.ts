@@ -182,7 +182,7 @@ export class BaileysService {
   /**
    * Send WhatsApp message via connected session
    */
-  public static async sendMessage(toPhone: string, text: string): Promise<{ success: boolean; wamid?: string; error?: string }> {
+  public static async sendMessage(toPhone: string, text: string, mediaPath?: string): Promise<{ success: boolean; wamid?: string; error?: string }> {
     if (this.connectionStatus !== 'CONNECTED' || !this.socket) {
       return {
         success: false,
@@ -191,12 +191,39 @@ export class BaileysService {
     }
 
     try {
-      const cleanNumber = toPhone.replace(/[^\d]/g, '');
-      const jid = `${cleanNumber}@s.whatsapp.net`;
+      let cleanNumber = toPhone.replace(/[^\d]/g, '');
+      if (cleanNumber.length === 10) {
+        cleanNumber = `91${cleanNumber}`;
+      } else if (cleanNumber.length === 11 && cleanNumber.startsWith('0')) {
+        cleanNumber = `91${cleanNumber.substring(1)}`;
+      }
 
-      const result = await this.socket.sendMessage(jid, { text });
+      if (!cleanNumber) {
+        return { success: false, error: 'Invalid phone number.' };
+      }
+
+      let jid = `${cleanNumber}@s.whatsapp.net`;
+      try {
+        const results = await this.socket.onWhatsApp(cleanNumber);
+        if (results && results.length > 0 && results[0].jid) {
+          jid = results[0].jid;
+        }
+      } catch (onWaErr) {
+        // Fallback to direct jid
+      }
+
+      let result;
+      if (mediaPath && fs.existsSync(mediaPath)) {
+        const buffer = fs.readFileSync(mediaPath);
+        result = await this.socket.sendMessage(jid, {
+          image: buffer,
+          caption: text
+        });
+      } else {
+        result = await this.socket.sendMessage(jid, { text });
+      }
+
       const wamid = result?.key?.id || `wamid.BAILEYS_${Date.now()}`;
-
       return { success: true, wamid };
     } catch (err: any) {
       console.error('[Baileys] Send error:', err);

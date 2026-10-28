@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import { db } from '../db/database';
 import { QueueService } from '../services/queueService';
+import { BaileysService } from '../services/baileysService';
 
 const router = Router();
 
@@ -152,10 +153,26 @@ router.post('/quick-send', (req: Request, res: Response): any => {
   let targetContacts: any[] = [];
   if (recipientPhones && Array.isArray(recipientPhones) && recipientPhones.length > 0) {
     for (const p of recipientPhones) {
+      let norm = String(p).replace(/[^\d]/g, '');
+      if (norm.length === 10) norm = `91${norm}`;
+      else if (norm.length === 11 && norm.startsWith('0')) norm = `91${norm.substring(1)}`;
+
+      if (!norm) continue;
+
+      let contact = db.prepare('SELECT id, name FROM contacts WHERE normalized_phone = ? LIMIT 1').get(norm) as any;
+      if (!contact) {
+        const newId = uuidv4();
+        db.prepare(`
+          INSERT INTO contacts (id, name, raw_phone, normalized_phone, consent_status, contact_status, do_not_contact)
+          VALUES (?, ?, ?, ?, 'OPTED_IN', 'VALID', 0)
+        `).run(newId, String(p), String(p), norm);
+        contact = { id: newId, name: String(p) };
+      }
+
       targetContacts.push({
-        id: uuidv4(),
-        name: 'Valued Customer',
-        normalized_phone: p
+        id: contact.id,
+        name: contact.name || 'Valued Customer',
+        normalized_phone: norm
       });
     }
   } else {
@@ -215,6 +232,46 @@ router.post('/quick-send', (req: Request, res: Response): any => {
   });
 
   tx(targetContacts);
+
+  // If WhatsApp Web is connected, dispatch immediately
+  if (BaileysService.getStatus().connected) {
+    (async () => {
+      for (const item of targetContacts) {
+        try {
+          const res = await BaileysService.sendMessage(item.normalized_phone, messageText.trim());
+          if (res.success && res.wamid) {
+            db.prepare(`
+              UPDATE campaign_recipients
+              SET status = 'ACCEPTED', message_id = ?, sent_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+              WHERE campaign_id = ? AND phone_number = ?
+            `).run(res.wamid, campId, item.normalized_phone);
+
+            db.prepare(`
+              UPDATE campaigns
+              SET sent_count = sent_count + 1, status = 'COMPLETED', completed_at = CURRENT_TIMESTAMP
+              WHERE id = ?
+            `).run(campId);
+
+            db.prepare(`
+              INSERT INTO message_records (
+                id, wamid, campaign_id, sender_id, recipient_phone, direction, message_type,
+                content, status, pricing_category, sent_at
+              ) VALUES (?, ?, ?, ?, ?, 'OUTBOUND', 'TEXT', ?, 'SENT', 'marketing', CURRENT_TIMESTAMP)
+            `).run(
+              uuidv4(),
+              res.wamid,
+              campId,
+              sender?.id,
+              item.normalized_phone,
+              messageText.trim()
+            );
+          }
+        } catch (e) {
+          console.error('[QuickSend] Error sending to', item.normalized_phone, e);
+        }
+      }
+    })();
+  }
 
   return res.json({
     success: true,
