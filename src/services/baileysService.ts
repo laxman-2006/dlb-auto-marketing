@@ -102,6 +102,59 @@ export class BaileysService {
         }
       });
 
+      this.socket.ev.on('messages.update', (updates) => {
+        for (const u of updates) {
+          const wamid = u.key?.id;
+          if (!wamid) continue;
+
+          const st = (u.update as any)?.status;
+          const stubParams = (u.update as any)?.messageStubParameters;
+          const isError = st === 0 || (stubParams && stubParams.includes('463'));
+
+          if (isError) {
+            const errDetail = stubParams?.includes('463')
+              ? 'WhatsApp Account Restricted (Error 463): WhatsApp is temporarily blocking outbound messages from this number.'
+              : 'WhatsApp server rejected message delivery.';
+
+            console.log(`[Baileys ev] Message ${wamid} marked FAILED: ${errDetail}`);
+
+            try {
+              const rec = db.prepare('SELECT campaign_id FROM campaign_recipients WHERE message_id = ?').get(wamid) as any;
+              db.prepare(`
+                UPDATE campaign_recipients
+                SET status = 'FAILED', error_message = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE message_id = ?
+              `).run(errDetail, wamid);
+
+              db.prepare(`
+                UPDATE message_records
+                SET status = 'FAILED', error_code = '463', error_message = ?
+                WHERE wamid = ?
+              `).run(errDetail, wamid);
+
+              if (rec?.campaign_id) {
+                db.prepare(`
+                  UPDATE campaigns
+                  SET sent_count = MAX(0, sent_count - 1), failed_count = failed_count + 1
+                  WHERE id = ?
+                `).run(rec.campaign_id);
+              }
+            } catch (dbErr) {
+              console.error('[Baileys ev] Error updating failed status in DB:', dbErr);
+            }
+          } else if (st === 3 || st === 4) {
+            try {
+              db.prepare(`UPDATE campaign_recipients SET delivered_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE message_id = ?`).run(wamid);
+              db.prepare(`UPDATE message_records SET status = 'DELIVERED', delivered_at = CURRENT_TIMESTAMP WHERE wamid = ?`).run(wamid);
+            } catch {}
+          }
+        }
+      });
+
+      this.socket.ev.on('message-receipt.update', (receipts) => {
+        // Can be logged for audit
+      });
+
       this.socket.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
@@ -299,7 +352,9 @@ export class BaileysService {
 
       let jid = `${cleanNumber}@s.whatsapp.net`;
       try {
+        console.log(`[Baileys Send] Querying onWhatsApp for ${cleanNumber}...`);
         const results = await this.socket.onWhatsApp(cleanNumber);
+        console.log(`[Baileys Send] onWhatsApp result for ${cleanNumber}:`, JSON.stringify(results));
         if (results && results.length > 0) {
           if (results[0].exists === false) {
             return {
@@ -311,10 +366,11 @@ export class BaileysService {
             jid = results[0].jid;
           }
         }
-      } catch (onWaErr) {
-        // Fallback to direct jid
+      } catch (onWaErr: any) {
+        console.warn(`[Baileys Send] onWhatsApp check warning:`, onWaErr?.message);
       }
 
+      console.log(`[Baileys Send] Sending message to jid: ${jid}, text length: ${text.length}`);
       let result;
       if (mediaPath && fs.existsSync(mediaPath)) {
         const buffer = fs.readFileSync(mediaPath);
@@ -325,6 +381,7 @@ export class BaileysService {
       } else {
         result = await this.socket.sendMessage(jid, { text });
       }
+      console.log(`[Baileys Send] Raw sendMessage result:`, JSON.stringify(result));
 
       if (result?.key?.id && result?.message) {
         BaileysService.messageStore.set(result.key.id, result.message);
@@ -375,7 +432,9 @@ export class BaileysService {
 
       // WhatsApp limits group subject to 25-30 chars safely
       const cleanSubject = subject.slice(0, 25).trim() || 'DLB All Members';
+      console.log(`[Baileys CreateGroup] Subject: ${cleanSubject}, Jids:`, jids);
       const group = await this.socket.groupCreate(cleanSubject, jids);
+      console.log(`[Baileys CreateGroup] Created group response:`, JSON.stringify(group));
 
       let inviteLink = '';
       try {

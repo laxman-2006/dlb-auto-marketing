@@ -67,7 +67,11 @@ router.post('/create', async (req: Request, res: Response): Promise<any> => {
   try {
     const createRes = await BaileysService.createGroup(groupName, initialPhones);
     if (!createRes.success || !createRes.groupJid) {
-      return res.status(400).json({ error: createRes.error || 'Failed to create WhatsApp group' });
+      let errMsg = createRes.error || 'Failed to create WhatsApp group';
+      if (errMsg.includes('account_reachout_restricted')) {
+        errMsg = 'WhatsApp सर्वर रोक (account_reachout_restricted): WhatsApp ने आपके इस नंबर पर नए ग्रुप बनाने या अज्ञात नंबरों पर मैसेज भेजने पर अस्थायी रोक लगाई हुई है। कृपया अपने मोबाइल के WhatsApp ऐप में जाकर कोई चेतावनी देखें।';
+      }
+      return res.status(400).json({ error: errMsg });
     }
 
     const groupId = uuidv4();
