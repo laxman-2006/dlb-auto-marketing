@@ -3,7 +3,8 @@ import makeWASocket, {
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
   WASocket,
-  proto
+  proto,
+  Browsers
 } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import path from 'path';
@@ -18,6 +19,7 @@ export class BaileysService {
   private static connectedPhoneNumber: string | null = null;
   private static connectedName: string | null = null;
   private static isInitializing = false;
+  private static messageStore = new Map<string, proto.IMessage>();
 
   private static getAuthDir(): string {
     const dataDir = process.env.DATA_DIR || path.resolve(__dirname, '../../data');
@@ -55,11 +57,35 @@ export class BaileysService {
         auth: state,
         printQRInTerminal: false,
         logger: silentLogger,
-        browser: ['DLB AUTO MARKETING', 'Chrome', '1.0.0'],
-        syncFullHistory: false
+        browser: Browsers.windows('Chrome'),
+        markOnlineOnConnect: true,
+        syncFullHistory: false,
+        getMessage: async (key: proto.IMessageKey) => {
+          if (key.id && BaileysService.messageStore.has(key.id)) {
+            return BaileysService.messageStore.get(key.id);
+          }
+          if (key.id) {
+            try {
+              const record = db.prepare('SELECT content FROM message_records WHERE wamid = ?').get(key.id) as any;
+              if (record && record.content) {
+                return { conversation: record.content };
+              }
+            } catch {}
+          }
+          return proto.Message.fromObject({});
+        }
       });
 
       this.socket.ev.on('creds.update', saveCreds);
+
+      // Cache all incoming and outgoing messages to answer retry/peer requests
+      this.socket.ev.on('messages.upsert', async ({ messages }) => {
+        for (const msg of messages) {
+          if (msg.key?.id && msg.message) {
+            BaileysService.messageStore.set(msg.key.id, msg.message);
+          }
+        }
+      });
 
       this.socket.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
@@ -205,8 +231,16 @@ export class BaileysService {
       let jid = `${cleanNumber}@s.whatsapp.net`;
       try {
         const results = await this.socket.onWhatsApp(cleanNumber);
-        if (results && results.length > 0 && results[0].jid) {
-          jid = results[0].jid;
+        if (results && results.length > 0) {
+          if (results[0].exists === false) {
+            return {
+              success: false,
+              error: `Phone number +${cleanNumber} is not registered on WhatsApp.`
+            };
+          }
+          if (results[0].jid) {
+            jid = results[0].jid;
+          }
         }
       } catch (onWaErr) {
         // Fallback to direct jid
@@ -221,6 +255,10 @@ export class BaileysService {
         });
       } else {
         result = await this.socket.sendMessage(jid, { text });
+      }
+
+      if (result?.key?.id && result?.message) {
+        BaileysService.messageStore.set(result.key.id, result.message);
       }
 
       const wamid = result?.key?.id || `wamid.BAILEYS_${Date.now()}`;

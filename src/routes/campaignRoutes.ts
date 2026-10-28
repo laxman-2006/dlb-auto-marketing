@@ -29,31 +29,39 @@ router.get('/feed', (req: Request, res: Response) => {
   `).all() as any[];
 
   const feed = campaigns.map((c) => {
-    const sent = c.sent_count || 0;
-    const notSent = Math.max(0, (c.total_recipients || 0) - sent);
-    const isDone = c.status === 'COMPLETED' || (sent > 0 && notSent === 0);
+    const total = c.total_recipients || 1;
+    const sent = Math.min(total, c.sent_count || 0);
+    const failed = c.failed_count || 0;
+    const pending = Math.max(0, total - (sent + failed));
+    const isDone = c.status === 'COMPLETED' || (sent + failed >= total && total > 0);
     const isStopped = c.status === 'PAUSED' || c.status === 'CANCELLED';
     const statusLabel = isDone ? 'Done' : isStopped ? 'Stopped' : 'In Progress';
     const statusSummary = isDone
-      ? `Done — ${sent} sent`
-      : `${statusLabel} — ${sent} sent, ${notSent} not sent`;
+      ? `Done — ${sent} delivered${failed > 0 ? `, ${failed} failed` : ''}`
+      : `${statusLabel} — ${sent} sent, ${pending} pending${failed > 0 ? `, ${failed} failed` : ''}`;
+
+    const textContent = c.custom_message || c.template_body || 'Marketing message';
 
     return {
       id: c.id,
       name: c.name,
-      message_text: c.custom_message || c.template_body || 'Marketing message',
+      message_text: textContent,
+      message_snippet: textContent,
       media_name: c.media_name,
       media_url: c.media_url,
       status: c.status,
       status_label: statusLabel,
-      people_count: `${c.total_recipients || 1} ${c.total_recipients === 1 ? 'person' : 'people'}`,
+      total_count: total,
+      total_recipients: total,
+      people_count: `${total} ${total === 1 ? 'person' : 'people'}`,
+      summary_line: statusSummary,
       status_summary: statusSummary,
       created_at: c.created_at,
-      total_recipients: c.total_recipients,
-      sent_count: c.sent_count,
-      delivered_count: c.delivered_count,
-      read_count: c.read_count,
-      failed_count: c.failed_count
+      created_time: c.created_at ? new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+      sent_count: sent,
+      delivered_count: sent,
+      read_count: c.read_count || 0,
+      failed_count: failed
     };
   });
 
@@ -233,46 +241,7 @@ router.post('/quick-send', (req: Request, res: Response): any => {
 
   tx(targetContacts);
 
-  // If WhatsApp Web is connected, dispatch immediately
-  if (BaileysService.getStatus().connected) {
-    (async () => {
-      for (const item of targetContacts) {
-        try {
-          const res = await BaileysService.sendMessage(item.normalized_phone, messageText.trim());
-          if (res.success && res.wamid) {
-            db.prepare(`
-              UPDATE campaign_recipients
-              SET status = 'ACCEPTED', message_id = ?, sent_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-              WHERE campaign_id = ? AND phone_number = ?
-            `).run(res.wamid, campId, item.normalized_phone);
-
-            db.prepare(`
-              UPDATE campaigns
-              SET sent_count = sent_count + 1, status = 'COMPLETED', completed_at = CURRENT_TIMESTAMP
-              WHERE id = ?
-            `).run(campId);
-
-            db.prepare(`
-              INSERT INTO message_records (
-                id, wamid, campaign_id, sender_id, recipient_phone, direction, message_type,
-                content, status, pricing_category, sent_at
-              ) VALUES (?, ?, ?, ?, ?, 'OUTBOUND', 'TEXT', ?, 'SENT', 'marketing', CURRENT_TIMESTAMP)
-            `).run(
-              uuidv4(),
-              res.wamid,
-              campId,
-              sender?.id,
-              item.normalized_phone,
-              messageText.trim()
-            );
-          }
-        } catch (e) {
-          console.error('[QuickSend] Error sending to', item.normalized_phone, e);
-        }
-      }
-    })();
-  }
-
+  // QueueService will process the queued recipients sequentially with anti-ban safety
   return res.json({
     success: true,
     campaignId: campId,

@@ -1,7 +1,9 @@
-import React from 'react';
-import { Users, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
+import React, { useState } from 'react';
+import { Users, CheckCircle2, Clock, AlertTriangle, RotateCw } from 'lucide-react';
+import { api } from '../api';
 
 interface CampaignProgressCardProps {
+  campaignId?: string;
   totalRecipients: number;
   delivered: number;
   pending: number;
@@ -9,25 +11,46 @@ interface CampaignProgressCardProps {
   readCount?: number;
   status?: string;
   campaignName?: string;
+  onRetryFailed?: () => void;
 }
 
 export const CampaignProgressCard: React.FC<CampaignProgressCardProps> = ({
+  campaignId,
   totalRecipients,
   delivered,
-  pending,
+  pending: propPending,
   failed,
   readCount = 0,
   status = 'ACTIVE',
-  campaignName = 'Live Campaign'
+  campaignName = 'Live Campaign',
+  onRetryFailed
 }) => {
+  const [retrying, setRetrying] = useState(false);
+
   const safeTotal = Math.max(0, totalRecipients);
-  const safeDelivered = Math.max(0, delivered);
-  const safePending = Math.max(0, pending);
+  // Delivered can never exceed total recipients
+  const safeDelivered = Math.min(safeTotal, Math.max(0, delivered));
   const safeFailed = Math.max(0, failed);
+  const safePending = propPending !== undefined ? propPending : Math.max(0, safeTotal - (safeDelivered + safeFailed));
 
   // Delivery percentage based on accurate real numbers
   const percentComplete = safeTotal > 0 ? Math.min(100, Math.round(((safeDelivered + safeFailed) / safeTotal) * 100)) : 0;
   const percentDelivered = safeTotal > 0 ? Math.min(100, Math.round((safeDelivered / safeTotal) * 100)) : 0;
+
+  const handleRetry = async () => {
+    if (!campaignId) return;
+    setRetrying(true);
+    try {
+      await api.retryFailedRecipients(campaignId);
+      if (onRetryFailed) {
+        onRetryFailed();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to retry failed recipients');
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   return (
     <div className="campaign-metrics-card">
@@ -109,6 +132,53 @@ export const CampaignProgressCard: React.FC<CampaignProgressCardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Failed Retry Option (Only appears if there are failed contacts) */}
+      {safeFailed > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: '#FEF2F2',
+            border: '1px solid #FECACA',
+            borderRadius: '8px',
+            padding: '8px 14px',
+            fontSize: '12.5px',
+            color: '#991B1B',
+            marginTop: '4px'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertTriangle size={15} color="#DC2626" />
+            <span>
+              <strong>{safeFailed.toLocaleString()} contact{safeFailed > 1 ? 's' : ''} failed</strong> (e.g. number not registered on WhatsApp).
+            </span>
+          </div>
+          {campaignId && onRetryFailed && (
+            <button
+              onClick={handleRetry}
+              disabled={retrying}
+              style={{
+                background: '#DC2626',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '5px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}
+            >
+              <RotateCw size={12} className={retrying ? 'spin' : ''} />
+              {retrying ? 'Retrying...' : 'Retry Failed Only (दुबारा भेजें)'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 };

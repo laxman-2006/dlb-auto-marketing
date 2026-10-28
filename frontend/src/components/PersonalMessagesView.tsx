@@ -254,6 +254,7 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
       {/* SECTION 5: Campaign Progress Display */}
       {latestCamp && (
         <CampaignProgressCard
+          campaignId={latestCamp.id}
           campaignName={latestCamp.name || 'Active Campaign'}
           status={latestCamp.status_label || latestCamp.status || 'Active'}
           totalRecipients={totalEligible}
@@ -261,6 +262,10 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
           pending={pendingCount}
           failed={failedCount}
           readCount={readCount}
+          onRetryFailed={() => {
+            loadFeed();
+            showToast('success', 'Retrying failed messages...');
+          }}
         />
       )}
 
@@ -296,17 +301,19 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
         {feed.map((card) => {
           const isDone = card.status === 'COMPLETED' || card.status_label === 'Done';
           const isStopped = card.status === 'STOPPED' || card.status_label === 'Stopped';
+          const count = card.total_count || card.total_recipients || 1;
+          const msg = card.message_snippet || card.message_text || 'Marketing message';
 
           return (
             <div key={card.id} className="campaign-bubble-card">
-              <div className="card-message-content">{card.message_snippet}</div>
+              <div className="card-message-content">{msg}</div>
 
               <div className="card-recipient-count">
                 <span className={`status-tag ${isDone ? 'done' : isStopped ? 'stopped' : 'in-progress'}`}>
                   {card.status_label || card.status}
                 </span>
-                <span style={{ fontSize: '12.5px', fontWeight: 600, color: '#374151' }}>
-                  {card.total_count} {card.total_count === 1 ? 'person' : 'people'}
+                <span style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--dlb-text-primary)' }}>
+                  {count} {count === 1 ? 'person' : 'people'}
                 </span>
               </div>
 

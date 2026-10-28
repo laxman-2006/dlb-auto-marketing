@@ -218,6 +218,10 @@ export class QueueService {
       let sendResult: { success: boolean; wamid?: string; error?: string };
 
       if (BaileysService.getStatus().connected) {
+        // Safe anti-ban randomized jitter delay (1.2s - 2.5s)
+        const jitterMs = Math.floor(Math.random() * 1300) + 1200;
+        await new Promise((r) => setTimeout(r, jitterMs));
+
         let body = item.custom_message;
         if (!body || !body.trim()) {
           const template = db.prepare('SELECT body_text FROM message_templates WHERE id = ?').get(item.template_id) as any;
