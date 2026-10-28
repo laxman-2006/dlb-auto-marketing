@@ -141,6 +141,14 @@ export const api = {
     fetchJson<any>(`${API_BASE}/groups/${groupId}/members?status=${filter}&q=${encodeURIComponent(q)}&page=${page}`),
   getGroupMessages: (groupId: string) =>
     fetchJson<any>(`${API_BASE}/groups/${groupId}/messages`),
+  renameGroup: (id: string, name: string) =>
+    fetchJson<any>(`${API_BASE}/groups/${id}/rename`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    }),
+  deleteGroup: (id: string) =>
+    fetchJson<any>(`${API_BASE}/groups/${id}`, { method: 'DELETE' }),
 
   // Webhook Simulator
   simulateWebhook: (payload: any) =>

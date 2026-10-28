@@ -492,4 +492,18 @@ export class BaileysService {
       return null;
     }
   }
+
+  /**
+   * Update WhatsApp Group Subject / Name
+   */
+  public static async updateGroupSubject(groupJid: string, subject: string): Promise<boolean> {
+    if (!this.socket || this.connectionStatus !== 'CONNECTED') return false;
+    try {
+      await this.socket.groupUpdateSubject(groupJid, subject.slice(0, 25).trim());
+      return true;
+    } catch (e) {
+      console.error('[Baileys] updateGroupSubject error:', e);
+      return false;
+    }
+  }
 }

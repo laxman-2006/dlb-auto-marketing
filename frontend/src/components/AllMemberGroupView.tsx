@@ -10,7 +10,11 @@ import {
   RefreshCw,
   Search,
   ExternalLink,
-  Sparkles
+  Sparkles,
+  Plus,
+  Edit3,
+  Trash2,
+  X
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -47,9 +51,17 @@ interface AllMemberGroupViewProps {
 }
 
 export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
-  const [, setGroups] = useState<GroupInfo[]>([]);
+  const [groups, setGroups] = useState<GroupInfo[]>([]);
   const [activeGroup, setActiveGroup] = useState<GroupInfo | null>(null);
   const [activeTab, setActiveTab] = useState<'excel' | 'paste' | 'messages' | 'members'>('excel');
+
+  // Create new group modal state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+
+  // Rename group state
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameText, setRenameText] = useState('');
 
   // Input states
   const [rawNumbers, setRawNumbers] = useState('');
@@ -82,17 +94,24 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
   const mediaInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch groups
-  const loadGroups = async () => {
+  const loadGroups = async (preferredId?: string) => {
     try {
       setLoading(true);
       const res = await api.getGroups();
-      if (res.success && res.groups?.length > 0) {
-        setGroups(res.groups);
-        if (!activeGroup) {
-          setActiveGroup(res.groups[0]);
+      if (res.success) {
+        const groupList: GroupInfo[] = res.groups || [];
+        setGroups(groupList);
+
+        if (groupList.length === 0) {
+          setActiveGroup(null);
+        } else if (preferredId) {
+          const match = groupList.find((g) => g.id === preferredId);
+          setActiveGroup(match || groupList[0]);
+        } else if (activeGroup) {
+          const current = groupList.find((g) => g.id === activeGroup.id);
+          setActiveGroup(current || groupList[0]);
         } else {
-          const current = res.groups.find((g: GroupInfo) => g.id === activeGroup.id);
-          if (current) setActiveGroup(current);
+          setActiveGroup(groupList[0]);
         }
       }
     } catch (err: any) {
@@ -128,13 +147,19 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
     setPastedCount(matches ? matches.length : 0);
   }, [rawNumbers]);
 
-  // Load members when tab is active
+  // Load members & messages when active group or tab changes
   useEffect(() => {
-    if (activeGroup && (activeTab === 'members' || activeTab === 'excel' || activeTab === 'paste')) {
+    if (activeGroup) {
+      setRenameText(activeGroup.name);
+      setIsRenaming(false);
       loadMembers(activeGroup.id);
       loadMessages(activeGroup.id);
+    } else {
+      setMembers([]);
+      setMessages([]);
+      setMembersTotal(0);
     }
-  }, [activeGroup?.id, activeTab, membersFilter]);
+  }, [activeGroup?.id, membersFilter]);
 
   const loadMembers = async (groupId: string) => {
     try {
@@ -158,20 +183,81 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
     } catch {}
   };
 
-  // Add members from paste
+  // Create New Group
+  const handleCreateNewGroup = async () => {
+    if (!newGroupName.trim()) {
+      alert('कृपया ग्रुप का नाम लिखें (Please enter group name).');
+      return;
+    }
+    try {
+      setLoading(true);
+      setActionStatus(null);
+      setProgressMsg(`Creating group "${newGroupName.trim()}" on WhatsApp...`);
+
+      const res = await api.createGroup({ name: newGroupName.trim() });
+      if (res.success && res.group) {
+        setActionStatus(`✅ नया ग्रुप "${res.group.name}" सफलतापूर्वक बन गया है! अब आप इसमें नंबर या एक्सेल जोड़ सकते हैं।`);
+        setShowCreateModal(false);
+        setNewGroupName('');
+        await loadGroups(res.group.id);
+      }
+    } catch (err: any) {
+      alert(`ग्रुप बनाने में समस्या: ${err.message || 'Error creating group'}`);
+    } finally {
+      setLoading(false);
+      setProgressMsg(null);
+    }
+  };
+
+  // Rename Active Group
+  const handleSaveRename = async () => {
+    if (!activeGroup || !renameText.trim()) return;
+    try {
+      setLoading(true);
+      await api.renameGroup(activeGroup.id, renameText.trim());
+      setActionStatus(`✅ ग्रुप का नाम बदलकर "${renameText.trim()}" कर दिया गया है।`);
+      setIsRenaming(false);
+      await loadGroups(activeGroup.id);
+    } catch (err: any) {
+      alert(`नाम बदलने में समस्या: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete Active Group
+  const handleDeleteGroup = async (group: GroupInfo) => {
+    const confirmDelete = window.confirm(
+      `क्या आप ग्रुप "${group.name}" को ऐप से हटाना चाहते हैं?\n(Are you sure you want to delete this group from the app?)`
+    );
+    if (!confirmDelete) return;
+
+    try {
+      setLoading(true);
+      await api.deleteGroup(group.id);
+      setActionStatus(`🗑️ ग्रुप "${group.name}" हटा दिया गया है।`);
+      await loadGroups();
+    } catch (err: any) {
+      alert(`ग्रुप हटाने में समस्या: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Add members from paste to the active selected group
   const handleAddFromPaste = async () => {
     if (!activeGroup || !rawNumbers.trim()) return;
     try {
       setLoading(true);
       setActionStatus(null);
-      setProgressMsg('Adding contacts to WhatsApp Group in safe anti-ban batches...');
+      setProgressMsg(`Adding contacts to "${activeGroup.name}" in safe anti-ban batches...`);
 
       const res = await api.addGroupMembers(activeGroup.id, { rawNumbers });
       setActionStatus(
-        `✅ Success! Total processed: ${res.total} (Added: ${res.added}, Invited: ${res.invited}, Already Members: ${res.alreadyInGroup}, Failed: ${res.failed}).`
+        `✅ Success! Total processed: ${res.total} (Added: ${res.added}, Invited: ${res.invited}, Already Members: ${res.alreadyInGroup}, Failed: ${res.failed}) into "${activeGroup.name}".`
       );
       setRawNumbers('');
-      await loadGroups();
+      await loadGroups(activeGroup.id);
       await loadMembers(activeGroup.id);
     } catch (err: any) {
       setActionStatus(`❌ Error: ${err.message || 'Failed to add contacts'}`);
@@ -181,7 +267,7 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
     }
   };
 
-  // Add members from Excel
+  // Add members from Excel to the active selected group
   const handleAddFromExcel = async () => {
     if (!activeGroup || !selectedFile) return;
     try {
@@ -194,11 +280,11 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
 
       const res = await api.uploadGroupExcel(activeGroup.id, formData);
       setActionStatus(
-        `✅ ${selectedFile.name} successfully processed! Detected: ${res.totalDetected} numbers. Added: ${res.added}, Invited: ${res.invited}, Already Members: ${res.alreadyInGroup}. All new numbers are permanently in this group!`
+        `✅ ${selectedFile.name} successfully processed! Detected: ${res.totalDetected} numbers. Added: ${res.added}, Invited: ${res.invited}, Already Members: ${res.alreadyInGroup}. All numbers are now in "${activeGroup.name}"!`
       );
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
-      await loadGroups();
+      await loadGroups(activeGroup.id);
       await loadMembers(activeGroup.id);
     } catch (err: any) {
       setActionStatus(`❌ Error: ${err.message || 'Failed to process Excel file'}`);
@@ -208,7 +294,7 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
     }
   };
 
-  // Send group broadcast message
+  // Send group broadcast message to the active selected group
   const handleSendGroupMessage = async () => {
     if (!activeGroup || !groupBroadcastText.trim()) return;
     try {
@@ -309,13 +395,37 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
               </span>
             </div>
             <p style={{ fontSize: 13, color: '#64748B', margin: '3px 0 0' }}>
-              One single group for all your contacts — add 10,000+ numbers from Excel & paste anytime.
+              Create multiple WhatsApp groups, name them as you wish, and add contacts from Excel/numbers anytime.
             </p>
           </div>
         </div>
 
-        {/* Group Selector & Live Count */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {/* Action Buttons: New Group & Refresh */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            onClick={() => {
+              setNewGroupName(`DLB Group ${groups.length + 1}`);
+              setShowCreateModal(true);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '9px 16px',
+              borderRadius: 9,
+              background: '#0284c7',
+              color: '#ffffff',
+              fontSize: 13,
+              fontWeight: 700,
+              border: 'none',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(2, 132, 199, 0.3)'
+            }}
+          >
+            <Plus size={17} />
+            <span>+ नया ग्रुप बनाएं (New Group)</span>
+          </button>
+
           {activeGroup?.invite_link && (
             <button
               onClick={copyInviteLink}
@@ -323,8 +433,8 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 7,
-                padding: '8px 14px',
-                borderRadius: 8,
+                padding: '9px 14px',
+                borderRadius: 9,
                 background: '#F1F5F9',
                 border: '1px solid #CBD5E1',
                 color: '#1E293B',
@@ -339,30 +449,13 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
             </button>
           )}
 
-          <div
-            style={{
-              padding: '6px 14px',
-              borderRadius: 8,
-              background: '#0F172A',
-              color: '#ffffff',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              fontWeight: 700,
-              fontSize: 13
-            }}
-          >
-            <Users size={16} color="#38BDF8" />
-            <span>{activeGroup?.total_members || activeGroup?.local_saved_members || 0} Members</span>
-          </div>
-
           <button
-            onClick={loadGroups}
+            onClick={() => loadGroups(activeGroup?.id)}
             style={{
-              padding: 8,
-              borderRadius: 8,
+              padding: 9,
+              borderRadius: 9,
               background: '#F8FAFC',
-              border: '1px solid #E2E8F0',
+              border: '1px solid #CBD5E1',
               cursor: 'pointer',
               color: '#64748B'
             }}
@@ -374,70 +467,382 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
       </header>
 
       {/* Main Workspace */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
-        {/* Info Banner */}
-        <div
-          style={{
-            background: 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)',
-            border: '1px solid #BFDBFE',
-            borderRadius: 12,
-            padding: '16px 20px',
-            marginBottom: 20,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 16
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                background: '#2563EB',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0
-              }}
-            >
-              <Sparkles size={20} color="#ffffff" />
+      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 28px' }}>
+        {/* CREATE NEW GROUP MODAL */}
+        {showCreateModal && (
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: 14,
+              padding: 24,
+              border: '2px solid #0284c7',
+              boxShadow: '0 10px 25px rgba(2, 132, 199, 0.15)',
+              marginBottom: 20
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Plus size={20} color="#0284c7" />
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0F172A' }}>
+                  नया WhatsApp ग्रुप बनाएं (Create New Group)
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowCreateModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
+              >
+                <X size={20} />
+              </button>
             </div>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#1E3A8A' }}>
-                ग्रुप का नाम: <strong>{activeGroup?.name || 'DLB AUTO - All Members'}</strong>
-              </div>
-              <div style={{ fontSize: 12, color: '#3B82F6', marginTop: 2 }}>
-                आप जितनी बार भी नए नंबर या एक्सेल फाइल अपलोड करेंगे, वे <strong>ऑटोमैटिकली इसी सेम ग्रुप में जुड़ते रहेंगे</strong>। (जैसे पहले 10,000 और बाद में 5,000 नंबर)।
-              </div>
+            <p style={{ fontSize: 13, color: '#64748B', margin: '0 0 16px' }}>
+              अपने ग्रुप का नाम यहाँ लिखें। यह ग्रुप आपके कनेक्टेड WhatsApp (+{waPhone.replace(/[^\d]/g, '')}) पर तैयार होगा।
+            </p>
+
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <input
+                type="text"
+                placeholder="ग्रुप का नाम लिखें (e.g. DLB VIP Customers, Festive Offer Group...)"
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                maxLength={25}
+                style={{
+                  flex: 1,
+                  padding: '12px 16px',
+                  borderRadius: 8,
+                  border: '1px solid #CBD5E1',
+                  fontSize: 14,
+                  fontWeight: 600
+                }}
+              />
+              <button
+                disabled={!newGroupName.trim() || loading}
+                onClick={handleCreateNewGroup}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: 8,
+                  background: !newGroupName.trim() || loading ? '#94A3B8' : '#16A34A',
+                  color: '#ffffff',
+                  fontSize: 14,
+                  fontWeight: 700,
+                  border: 'none',
+                  cursor: !newGroupName.trim() || loading ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8
+                }}
+              >
+                {loading ? <RefreshCw size={16} className="animate-spin" /> : <Check size={16} />}
+                <span>ग्रुप तैयार करें</span>
+              </button>
+              <button
+                onClick={() => setShowCreateModal(false)}
+                style={{
+                  padding: '12px 18px',
+                  borderRadius: 8,
+                  background: '#F1F5F9',
+                  border: '1px solid #CBD5E1',
+                  color: '#475569',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                रद्द करें
+              </button>
             </div>
           </div>
+        )}
 
-          {activeGroup?.invite_link && (
-            <a
-              href={activeGroup.invite_link}
-              target="_blank"
-              rel="noreferrer"
+        {/* MULTI-GROUP SELECTOR BAR */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              📁 आपके WhatsApp ग्रुप्स (Select Group to Manage):
+            </span>
+            <span style={{ fontSize: 12, color: '#64748B' }}>
+              कुल ग्रुप: <strong>{groups.length}</strong>
+            </span>
+          </div>
+
+          {groups.length === 0 ? (
+            <div
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '8px 16px',
-                borderRadius: 8,
-                background: '#2563EB',
-                color: '#ffffff',
-                fontSize: 12,
-                fontWeight: 600,
-                textDecoration: 'none',
-                flexShrink: 0
+                background: '#ffffff',
+                borderRadius: 12,
+                padding: '24px 20px',
+                textAlign: 'center',
+                border: '1px dashed #CBD5E1'
               }}
             >
-              <span>WhatsApp में खोलें</span>
-              <ExternalLink size={14} />
-            </a>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#334155', marginBottom: 8 }}>
+                अभी कोई ग्रुप नहीं है (No groups created yet)
+              </div>
+              <div style={{ fontSize: 12, color: '#64748B', marginBottom: 16 }}>
+                नया ग्रुप बनाने के लिए नीचे दिए गए बटन पर क्लिक करें और अपनी पसंद का नाम रखें।
+              </div>
+              <button
+                onClick={() => {
+                  setNewGroupName('DLB AUTO - All Members');
+                  setShowCreateModal(true);
+                }}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: 8,
+                  background: '#0284c7',
+                  color: '#ffffff',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8
+                }}
+              >
+                <Plus size={16} />
+                <span>+ नया ग्रुप बनाएं (Create Your First Group)</span>
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              {groups.map((g, idx) => {
+                const isActive = activeGroup?.id === g.id;
+                return (
+                  <div
+                    key={g.id}
+                    onClick={() => setActiveGroup(g)}
+                    style={{
+                      padding: '10px 16px',
+                      borderRadius: 10,
+                      background: isActive ? '#0284c7' : '#ffffff',
+                      color: isActive ? '#ffffff' : '#1E293B',
+                      border: `1.5px solid ${isActive ? '#0284c7' : '#E2E8F0'}`,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      boxShadow: isActive ? '0 4px 12px rgba(2, 132, 199, 0.25)' : '0 1px 3px rgba(0,0,0,0.02)',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: isActive ? '#38BDF8' : '#94A3B8'
+                      }}
+                    />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>
+                        {idx + 1}. {g.name}
+                      </div>
+                      <div style={{ fontSize: 11, opacity: isActive ? 0.9 : 0.6, marginTop: 1 }}>
+                        {g.total_members || g.local_saved_members || 0} Members
+                      </div>
+                    </div>
+
+                    {isActive && (
+                      <span
+                        style={{
+                          background: 'rgba(255,255,255,0.2)',
+                          padding: '2px 6px',
+                          borderRadius: 4,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          marginLeft: 4
+                        }}
+                      >
+                        ACTIVE
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+
+              <button
+                onClick={() => {
+                  setNewGroupName(`DLB Group ${groups.length + 1}`);
+                  setShowCreateModal(true);
+                }}
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  background: '#F1F5F9',
+                  border: '1.5px dashed #CBD5E1',
+                  color: '#0284c7',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <Plus size={16} />
+                <span>+ नया ग्रुप</span>
+              </button>
+            </div>
           )}
         </div>
+
+        {/* ACTIVE GROUP DETAIL BANNER (WITH RENAME & DELETE) */}
+        {activeGroup && (
+          <div
+            style={{
+              background: 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)',
+              border: '1px solid #BFDBFE',
+              borderRadius: 12,
+              padding: '16px 20px',
+              marginBottom: 20,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 16
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1 }}>
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 10,
+                  background: '#2563EB',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}
+              >
+                <Sparkles size={20} color="#ffffff" />
+              </div>
+              <div style={{ flex: 1 }}>
+                {isRenaming ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                    <input
+                      type="text"
+                      value={renameText}
+                      onChange={(e) => setRenameText(e.target.value)}
+                      maxLength={25}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: 6,
+                        border: '1px solid #2563EB',
+                        fontSize: 14,
+                        fontWeight: 700,
+                        width: 260
+                      }}
+                    />
+                    <button
+                      onClick={handleSaveRename}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: 6,
+                        background: '#16A34A',
+                        color: '#ffffff',
+                        border: 'none',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setIsRenaming(false)}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 6,
+                        background: '#E2E8F0',
+                        color: '#334155',
+                        border: 'none',
+                        fontSize: 12,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: '#1E3A8A' }}>
+                      सक्रिय ग्रुप: <strong>{activeGroup.name}</strong>
+                    </span>
+                    <button
+                      onClick={() => setIsRenaming(true)}
+                      style={{
+                        background: '#DBEAFE',
+                        border: '1px solid #93C5FD',
+                        borderRadius: 6,
+                        padding: '3px 8px',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: '#1E40AF',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4
+                      }}
+                      title="Rename Group"
+                    >
+                      <Edit3 size={12} />
+                      <span>नाम बदलें (Rename)</span>
+                    </button>
+                  </div>
+                )}
+                <div style={{ fontSize: 12, color: '#3B82F6', marginTop: 4 }}>
+                  👉 जो भी नए नंबर या एक्सेल फाइल अपलोड करेंगे, वे <strong>इसी ग्रुप ({activeGroup.name})</strong> में जुड़ेंगे। दूसरा ग्रुप चुनने के लिए ऊपर दिए गए ग्रुप्स पर क्लिक करें।
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              {activeGroup.invite_link && (
+                <a
+                  href={activeGroup.invite_link}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '8px 14px',
+                    borderRadius: 8,
+                    background: '#2563EB',
+                    color: '#ffffff',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    textDecoration: 'none'
+                  }}
+                >
+                  <span>WhatsApp में खोलें</span>
+                  <ExternalLink size={14} />
+                </a>
+              )}
+
+              <button
+                onClick={() => handleDeleteGroup(activeGroup)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '8px 12px',
+                  borderRadius: 8,
+                  background: '#FEE2E2',
+                  border: '1px solid #FCA5A5',
+                  color: '#991B1B',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+                title="Delete this group from app"
+              >
+                <Trash2 size={14} />
+                <span>हटाएं (Delete)</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Action Status Notification */}
         {actionStatus && (
@@ -569,7 +974,7 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
               एक्सेल या CSV फाइल अपलोड करें (10,000+ कॉन्टैक्ट्स)
             </h3>
             <p style={{ fontSize: 13, color: '#64748B', marginTop: 0, marginBottom: 20 }}>
-              फाइल चुनें या ड्रैग करें। सिस्टम स्वचालित रूप से सभी मोबाइल नंबरों को पहचानकर <strong>"{activeGroup?.name || 'All Members'}"</strong> ग्रुप में शामिल कर देगा।
+              फाइल चुनें या ड्रैग करें। सिस्टम स्वचालित रूप से सभी मोबाइल नंबरों को पहचानकर <strong>"{activeGroup?.name || 'Selected Group'}"</strong> में जोड़ देगा।
             </p>
 
             <div
@@ -617,17 +1022,17 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
               <button
-                disabled={!selectedFile || loading}
+                disabled={!selectedFile || loading || !activeGroup}
                 onClick={handleAddFromExcel}
                 style={{
                   padding: '12px 28px',
                   borderRadius: 10,
-                  background: !selectedFile || loading ? '#94A3B8' : '#0284c7',
+                  background: !selectedFile || loading || !activeGroup ? '#94A3B8' : '#0284c7',
                   color: '#ffffff',
                   fontSize: 14,
                   fontWeight: 700,
                   border: 'none',
-                  cursor: !selectedFile || loading ? 'not-allowed' : 'pointer',
+                  cursor: !selectedFile || loading || !activeGroup ? 'not-allowed' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 10,
@@ -635,7 +1040,7 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
                 }}
               >
                 {loading ? <RefreshCw size={18} className="animate-spin" /> : <UserPlus size={18} />}
-                <span>ग्रुप में सभी नंबर जोड़ें (Add All to Group)</span>
+                <span>"{activeGroup?.name || 'ग्रुप'}" में सभी नंबर जोड़ें</span>
               </button>
             </div>
           </div>
@@ -689,17 +1094,17 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
               <button
-                disabled={pastedCount === 0 || loading}
+                disabled={pastedCount === 0 || loading || !activeGroup}
                 onClick={handleAddFromPaste}
                 style={{
                   padding: '12px 28px',
                   borderRadius: 10,
-                  background: pastedCount === 0 || loading ? '#94A3B8' : '#0284c7',
+                  background: pastedCount === 0 || loading || !activeGroup ? '#94A3B8' : '#0284c7',
                   color: '#ffffff',
                   fontSize: 14,
                   fontWeight: 700,
                   border: 'none',
-                  cursor: pastedCount === 0 || loading ? 'not-allowed' : 'pointer',
+                  cursor: pastedCount === 0 || loading || !activeGroup ? 'not-allowed' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 10,
@@ -707,7 +1112,7 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
                 }}
               >
                 {loading ? <RefreshCw size={18} className="animate-spin" /> : <UserPlus size={18} />}
-                <span>ग्रुप में जोड़ें ({pastedCount} Contacts)</span>
+                <span>"{activeGroup?.name || 'ग्रुप'}" में जोड़ें ({pastedCount} Contacts)</span>
               </button>
             </div>
           </div>
@@ -717,10 +1122,10 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
         {activeTab === 'messages' && (
           <div style={{ background: '#ffffff', borderRadius: 14, padding: 28, border: '1px solid #E2E8F0', boxShadow: '0 2px 6px rgba(0,0,0,0.03)' }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0F172A', marginTop: 0, marginBottom: 6 }}>
-              ग्रुप में मैसेज या ऑफर भेजें (Broadcast to "{activeGroup?.name || 'All Members'}")
+              ग्रुप में मैसेज या ऑफर भेजें (Broadcast to "{activeGroup?.name || 'Selected Group'}")
             </h3>
             <p style={{ fontSize: 13, color: '#64748B', marginTop: 0, marginBottom: 18 }}>
-              यहाँ जो भी मैसेज या फोटो भेजेंगे, वह सीधे इस WhatsApp ग्रुप के सभी सदस्यों को एक साथ प्राप्त होगा।
+              यहाँ जो भी मैसेज या फोटो भेजेंगे, वह सीधे सक्रिय ग्रुप <strong>"{activeGroup?.name}"</strong> के सभी सदस्यों को एक साथ प्राप्त होगा।
             </p>
 
             <textarea
@@ -780,17 +1185,17 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
               </div>
 
               <button
-                disabled={!groupBroadcastText.trim() || loading}
+                disabled={!groupBroadcastText.trim() || loading || !activeGroup}
                 onClick={handleSendGroupMessage}
                 style={{
                   padding: '12px 28px',
                   borderRadius: 10,
-                  background: !groupBroadcastText.trim() || loading ? '#94A3B8' : '#16A34A',
+                  background: !groupBroadcastText.trim() || loading || !activeGroup ? '#94A3B8' : '#16A34A',
                   color: '#ffffff',
                   fontSize: 14,
                   fontWeight: 700,
                   border: 'none',
-                  cursor: !groupBroadcastText.trim() || loading ? 'not-allowed' : 'pointer',
+                  cursor: !groupBroadcastText.trim() || loading || !activeGroup ? 'not-allowed' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 10,
@@ -798,7 +1203,7 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
                 }}
               >
                 {loading ? <RefreshCw size={18} className="animate-spin" /> : <Send size={18} />}
-                <span>ग्रुप में सेंड करें (Send to Group)</span>
+                <span>"{activeGroup?.name || 'ग्रुप'}" में सेंड करें</span>
               </button>
             </div>
 
@@ -879,7 +1284,7 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
               </div>
 
               <span style={{ fontSize: 13, color: '#64748B', fontWeight: 600 }}>
-                कुल सदस्य: {membersTotal}
+                कुल सदस्य ({activeGroup?.name}): {membersTotal}
               </span>
             </div>
 

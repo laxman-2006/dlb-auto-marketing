@@ -26,16 +26,6 @@ router.get('/', async (req: Request, res: Response): Promise<any> => {
   try {
     let groups = db.prepare('SELECT * FROM whatsapp_groups ORDER BY created_at DESC').all() as any[];
 
-    // If no group exists yet, create the default "All Member Group" record
-    if (groups.length === 0) {
-      const defaultId = uuidv4();
-      db.prepare(`
-        INSERT INTO whatsapp_groups (id, name, group_jid, invite_link, total_members, description)
-        VALUES (?, 'DLB AUTO - All Members', 'PENDING_CREATION', NULL, 0, 'Official DLB AUTO Marketing Broadcast Group')
-      `).run(defaultId);
-      groups = db.prepare('SELECT * FROM whatsapp_groups ORDER BY created_at DESC').all() as any[];
-    }
-
     // Refresh member counts and invite links for live groups
     for (const g of groups) {
       if (g.group_jid && g.group_jid.endsWith('@g.us') && BaileysService.getStatus().connected) {
@@ -69,10 +59,10 @@ router.post('/create', async (req: Request, res: Response): Promise<any> => {
   const groupName = (name || 'DLB AUTO - All Members').slice(0, 25).trim();
 
   try {
-    let groupJid = 'OFFLINE_' + uuidv4().slice(0, 8);
+    let groupJid = 'PENDING_CREATION';
     let inviteLink = '';
 
-    if (BaileysService.getStatus().connected) {
+    if (BaileysService.getStatus().connected && initialPhones.length > 0) {
       const createRes = await BaileysService.createGroup(groupName, initialPhones);
       if (!createRes.success) {
         return res.status(400).json({ error: createRes.error || 'Failed to create WhatsApp group' });
@@ -417,6 +407,51 @@ router.get('/:id/messages', (req: Request, res: Response): any => {
   `).all(id);
 
   return res.json({ messages });
+});
+
+// PATCH /api/groups/:id/rename - Rename group
+router.patch('/:id/rename', async (req: Request, res: Response): Promise<any> => {
+  const { id } = req.params;
+  const { name } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Group name cannot be empty.' });
+  }
+
+  const cleanName = name.slice(0, 25).trim();
+  const group = db.prepare('SELECT * FROM whatsapp_groups WHERE id = ?').get(id) as any;
+  if (!group) {
+    return res.status(404).json({ error: 'Group not found.' });
+  }
+
+  db.prepare('UPDATE whatsapp_groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+    .run(cleanName, id);
+
+  // If live on WhatsApp, also update WhatsApp group subject
+  if (group.group_jid && group.group_jid.endsWith('@g.us') && BaileysService.getStatus().connected) {
+    try {
+      await BaileysService.updateGroupSubject(group.group_jid, cleanName);
+    } catch (e) {
+      console.warn('[GroupRoutes] WhatsApp rename error:', e);
+    }
+  }
+
+  return res.json({ success: true, name: cleanName });
+});
+
+// DELETE /api/groups/:id - Delete group and its local member ledger
+router.delete('/:id', (req: Request, res: Response): any => {
+  const { id } = req.params;
+
+  db.prepare('DELETE FROM group_members WHERE group_id = ?').run(id);
+  db.prepare('DELETE FROM group_messages WHERE group_id = ?').run(id);
+  const deleted = db.prepare('DELETE FROM whatsapp_groups WHERE id = ?').run(id);
+
+  if (deleted.changes === 0) {
+    return res.status(404).json({ error: 'Group not found.' });
+  }
+
+  return res.json({ success: true, message: 'Group deleted successfully.' });
 });
 
 export default router;
