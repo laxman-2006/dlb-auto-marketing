@@ -21,6 +21,7 @@ export class BaileysService {
   private static connectedPhoneNumber: string | null = null;
   private static connectedName: string | null = null;
   private static isInitializing = false;
+  private static reconnectTimer: NodeJS.Timeout | null = null;
   private static messageStore = new Map<string, proto.IMessage>();
 
   private static getAuthDir(): string {
@@ -33,10 +34,25 @@ export class BaileysService {
   }
 
   public static async init(): Promise<void> {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     if (this.isInitializing) return;
     this.isInitializing = true;
 
     try {
+      if (this.socket) {
+        try {
+          this.socket.ev.removeAllListeners('connection.update');
+          this.socket.ev.removeAllListeners('creds.update');
+          this.socket.ev.removeAllListeners('messages.upsert');
+          this.socket.end(undefined);
+        } catch {}
+        this.socket = null;
+      }
+
       const authDir = this.getAuthDir();
       const { state, saveCreds } = await useMultiFileAuthState(authDir);
       const { version } = await fetchLatestBaileysVersion();
@@ -55,6 +71,10 @@ export class BaileysService {
         browser: Browsers.windows('Chrome'),
         markOnlineOnConnect: true,
         syncFullHistory: false,
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 60000,
+        keepAliveIntervalMs: 25000,
+        retryRequestDelayMs: 3000,
         getMessage: async (key: proto.IMessageKey) => {
           if (key.id && BaileysService.messageStore.has(key.id)) {
             return BaileysService.messageStore.get(key.id);
@@ -107,16 +127,24 @@ export class BaileysService {
           const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
           this.connectionStatus = 'NOT_CONNECTED';
           this.currentQrDataUrl = null;
+          this.isInitializing = false;
+
+          if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+          }
 
           if (shouldReconnect) {
-            console.log('[Baileys] Connection closed, reconnecting...');
-            this.isInitializing = false;
-            setTimeout(() => this.init(), 3000);
+            console.log('[Baileys] Connection closed, reconnecting in 5s...');
+            this.reconnectTimer = setTimeout(() => {
+              this.init();
+            }, 5000);
           } else {
             console.log('[Baileys] Logged out. Clearing credentials...');
             this.clearAuth();
-            this.isInitializing = false;
-            setTimeout(() => this.init(), 1000);
+            this.reconnectTimer = setTimeout(() => {
+              this.init();
+            }, 1000);
           }
         } else if (connection === 'open') {
           this.connectionStatus = 'CONNECTED';

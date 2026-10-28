@@ -16,6 +16,15 @@ import reportRoutes from './routes/reportRoutes';
 import webhookRoutes from './routes/webhookRoutes';
 import groupRoutes from './routes/groupRoutes';
 
+// Global error handlers to prevent Baileys socket timeouts from killing the Node process
+process.on('unhandledRejection', (reason: any) => {
+  console.warn('[Process] Caught unhandled rejection (prevented crash):', reason?.message || reason);
+});
+
+process.on('uncaughtException', (err: any) => {
+  console.error('[Process] Caught uncaught exception (prevented crash):', err?.message || err);
+});
+
 const app = express();
 
 // Capture raw body for webhook HMAC validation
