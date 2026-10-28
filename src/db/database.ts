@@ -163,6 +163,46 @@ export function initDatabase() {
   try { db.exec("ALTER TABLE campaigns ADD COLUMN media_name TEXT;"); } catch {}
   try { db.exec("ALTER TABLE campaigns ADD COLUMN media_url TEXT;"); } catch {}
 
+  // Safe migrations for WhatsApp Groups feature
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS whatsapp_groups (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        group_jid TEXT UNIQUE NOT NULL,
+        invite_link TEXT,
+        total_members INTEGER DEFAULT 0,
+        description TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS group_members (
+        id TEXT PRIMARY KEY,
+        group_id TEXT NOT NULL,
+        phone_number TEXT NOT NULL,
+        contact_name TEXT,
+        status TEXT DEFAULT 'ADDED',
+        error_detail TEXT,
+        added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(group_id, phone_number)
+      );
+
+      CREATE TABLE IF NOT EXISTS group_messages (
+        id TEXT PRIMARY KEY,
+        group_id TEXT NOT NULL,
+        group_jid TEXT NOT NULL,
+        message_text TEXT NOT NULL,
+        media_name TEXT,
+        media_url TEXT,
+        status TEXT DEFAULT 'SENT',
+        sent_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  } catch (grpErr) {
+    console.error('[Database] Failed to init group tables:', grpErr);
+  }
+
   // Seed reference campaigns if none exist
   const campCount = db.prepare('SELECT COUNT(*) as count FROM campaigns').get() as { count: number };
   if (campCount.count === 0) {

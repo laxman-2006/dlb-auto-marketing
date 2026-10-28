@@ -14,6 +14,7 @@ import campaignRoutes from './routes/campaignRoutes';
 import conversationRoutes from './routes/conversationRoutes';
 import reportRoutes from './routes/reportRoutes';
 import webhookRoutes from './routes/webhookRoutes';
+import groupRoutes from './routes/groupRoutes';
 
 const app = express();
 
@@ -53,6 +54,7 @@ app.use('/api/import', importRoutes);
 app.use('/api/contacts', contactRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/campaigns', campaignRoutes);
+app.use('/api/groups', groupRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/webhook', webhookRoutes);

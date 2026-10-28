@@ -112,6 +112,36 @@ export const api = {
   // Reports APIs
   getReportsOverview: () => fetchJson<any>(`${API_BASE}/reports/overview`),
 
+  // Group Management APIs
+  getGroups: () => fetchJson<any>(`${API_BASE}/groups`),
+  createGroup: (payload: { name: string; initialPhones?: string[] }) =>
+    fetchJson<any>(`${API_BASE}/groups/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }),
+  addGroupMembers: (groupId: string, payload: { rawNumbers?: string; numbersList?: string[] }) =>
+    fetchJson<any>(`${API_BASE}/groups/${groupId}/add-members`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }),
+  uploadGroupExcel: (groupId: string, formData: FormData) =>
+    fetchJson<any>(`${API_BASE}/groups/${groupId}/upload`, {
+      method: 'POST',
+      body: formData
+    }),
+  sendGroupMessage: (groupId: string, payload: { messageText: string; mediaUrl?: string; mediaName?: string }) =>
+    fetchJson<any>(`${API_BASE}/groups/${groupId}/send-message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }),
+  getGroupMembers: (groupId: string, filter = 'ALL', q = '', page = 1) =>
+    fetchJson<any>(`${API_BASE}/groups/${groupId}/members?status=${filter}&q=${encodeURIComponent(q)}&page=${page}`),
+  getGroupMessages: (groupId: string) =>
+    fetchJson<any>(`${API_BASE}/groups/${groupId}/messages`),
+
   // Webhook Simulator
   simulateWebhook: (payload: any) =>
     fetchJson<any>(`/webhook/simulate`, {

@@ -6,18 +6,20 @@ import {
   Star,
   Bell,
   MessageSquare,
+  Users,
   Download,
   Wifi,
   WifiOff
 } from 'lucide-react';
 import { PersonalMessagesView } from './components/PersonalMessagesView';
+import { AllMemberGroupView } from './components/AllMemberGroupView';
 import { SettingsView } from './components/SettingsView';
 import { IntroScreen } from './components/IntroScreen';
 import { api } from './api';
 
 export const App: React.FC = () => {
   const [showIntro, setShowIntro] = useState(true);
-  const [currentView, setCurrentView] = useState<'home' | 'settings'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'group' | 'settings'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [showBanner, setShowBanner] = useState(true);
   const [waConnected, setWaConnected] = useState(false);
@@ -50,6 +52,13 @@ export const App: React.FC = () => {
           >
             <Home size={22} />
           </button>
+          <button
+            className={`rail-btn ${currentView === 'group' ? 'active' : ''}`}
+            onClick={() => setCurrentView('group')}
+            title="All Member Group (ग्रुप)"
+          >
+            <Users size={22} />
+          </button>
         </div>
 
         <div className="rail-bottom">
@@ -63,50 +72,58 @@ export const App: React.FC = () => {
         </div>
       </nav>
 
-      {/* REGION B: Conversation and Campaign Sidebar */}
-      <aside className="campaign-sidebar">
+      {/* REGION B: Left Middle Sidebar / Feed List */}
+      <aside className="left-sidebar">
         {/* Brand Header */}
         <div className="sidebar-brand-header">
-          <div className="brand-identity">
-            <img src="/logo.jpg" alt="DLB AUTO MARKETING Logo" className="brand-logo-img" />
-            <span className="brand-name">DLB AUTO MARKETING</span>
+          <div className="sidebar-brand-left">
+            <div className="brand-logo-circle">
+              <img
+                src="/dlb-logo.png"
+                alt="DLB AUTO MARKETING Logo"
+                className="brand-logo-img"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
+            </div>
+            <div className="brand-text-block">
+              <span className="brand-title">DLB AUTO</span>
+              <span className="brand-sub">MARKETING</span>
+            </div>
           </div>
-          <div className="sidebar-header-actions">
-            <span
-              className={`status-pill ${waConnected ? 'active' : 'paused'}`}
-              style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 8px', fontWeight: 600 }}
-              title={waConnected ? 'WhatsApp is online and ready' : 'WhatsApp is in standby mode'}
-            >
-              {waConnected ? <Wifi size={12} color="#059669" /> : <WifiOff size={12} color="#64748B" />}
-              {waConnected ? 'Online' : 'Standby'}
+          <div className="sidebar-brand-actions">
+            <span className={`status-pill ${waConnected ? 'online' : 'offline'}`}>
+              {waConnected ? <Wifi size={12} /> : <WifiOff size={12} />}
+              {waConnected ? 'ONLINE' : 'OFFLINE'}
             </span>
-            <button className="header-icon-btn" title="Favourites">
-              <Star size={18} />
+            <button className="icon-btn-ghost" title="Starred">
+              <Star size={16} />
             </button>
-            <button className="header-icon-btn" title="Notifications">
-              <Bell size={18} />
+            <button className="icon-btn-ghost" title="Notifications">
+              <Bell size={16} />
             </button>
           </div>
         </div>
 
         {/* Search Bar */}
-        <div className="search-container">
+        <div className="sidebar-search-box">
           <div className="search-input-wrapper">
-            <Search size={16} color="var(--text-muted)" />
+            <Search size={16} className="search-icon" />
             <input
               type="text"
-              className="search-input"
               placeholder="Search reports and messages..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              className="search-input"
             />
           </div>
         </div>
 
-        {/* Optional Add to Home Screen Banner matching Screenshot 1 */}
+        {/* Promo / Home Screen Banner */}
         {showBanner && (
-          <div className="homescreen-banner">
-            <div className="banner-left">
+          <div className="banner-pwa">
+            <div className="banner-text">
               <Download size={14} color="#204f38" />
               <span>Add DLB to your home screen</span>
             </div>
@@ -126,6 +143,7 @@ export const App: React.FC = () => {
 
         {/* Campaign List */}
         <div className="campaign-list-scroll">
+          {/* Card 1: Personal Messages */}
           <div
             className={`campaign-nav-item ${currentView === 'home' ? 'active' : ''}`}
             onClick={() => setCurrentView('home')}
@@ -135,7 +153,21 @@ export const App: React.FC = () => {
             </div>
             <div className="campaign-item-info">
               <div className="campaign-item-title">Personal Messages</div>
-              <div className="campaign-item-sub">Numbers + one message — each person ge...</div>
+              <div className="campaign-item-sub">Numbers + one message — each person gets individual copy</div>
+            </div>
+          </div>
+
+          {/* Card 2: All Member Group */}
+          <div
+            className={`campaign-nav-item ${currentView === 'group' ? 'active' : ''}`}
+            onClick={() => setCurrentView('group')}
+          >
+            <div className="campaign-item-avatar" style={{ background: '#0284c7' }}>
+              <Users size={20} color="#ffffff" />
+            </div>
+            <div className="campaign-item-info">
+              <div className="campaign-item-title">All Member Group (ग्रुप)</div>
+              <div className="campaign-item-sub">One WhatsApp group — auto add from Excel/numbers</div>
             </div>
           </div>
         </div>
@@ -144,6 +176,7 @@ export const App: React.FC = () => {
       {/* REGION C: Main Content Workspace */}
       <main style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {currentView === 'home' && <PersonalMessagesView onNavigateSettings={() => setCurrentView('settings')} />}
+        {currentView === 'group' && <AllMemberGroupView onNavigateSettings={() => setCurrentView('settings')} />}
         {currentView === 'settings' && <SettingsView />}
       </main>
     </div>

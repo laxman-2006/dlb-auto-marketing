@@ -234,6 +234,27 @@ export class BaileysService {
     }
 
     try {
+      if (toPhone.includes('@g.us')) {
+        const jid = toPhone.trim();
+        let result;
+        if (mediaPath && fs.existsSync(mediaPath)) {
+          const buffer = fs.readFileSync(mediaPath);
+          result = await this.socket.sendMessage(jid, {
+            image: buffer,
+            caption: text
+          });
+        } else {
+          result = await this.socket.sendMessage(jid, { text });
+        }
+
+        if (result?.key?.id && result?.message) {
+          BaileysService.messageStore.set(result.key.id, result.message);
+        }
+
+        const wamid = result?.key?.id || `wamid.BAILEYS_${Date.now()}`;
+        return { success: true, wamid };
+      }
+
       let cleanNumber = toPhone.replace(/[^\d]/g, '');
       if (cleanNumber.length === 10) {
         cleanNumber = `91${cleanNumber}`;
@@ -286,6 +307,189 @@ export class BaileysService {
     } catch (err: any) {
       console.error('[Baileys] Send error:', err);
       return { success: false, error: err.message || 'Failed to send WhatsApp message' };
+    }
+  }
+
+  public static formatJid(phone: string): string {
+    let clean = phone.replace(/[^\d]/g, '');
+    if (clean.length === 10) clean = `91${clean}`;
+    else if (clean.length === 11 && clean.startsWith('0')) clean = `91${clean.substring(1)}`;
+    return `${clean}@s.whatsapp.net`;
+  }
+
+  /**
+   * Create a new WhatsApp group
+   */
+  public static async createGroup(
+    subject: string,
+    initialPhones: string[] = []
+  ): Promise<{ success: boolean; groupJid?: string; inviteLink?: string; error?: string }> {
+    if (this.connectionStatus !== 'CONNECTED' || !this.socket) {
+      return { success: false, error: 'WhatsApp is not connected. Please connect WhatsApp in Settings.' };
+    }
+
+    try {
+      const jids: string[] = [];
+      for (const phone of initialPhones) {
+        const jid = this.formatJid(phone);
+        if (jid.length > 15 && !jids.includes(jid)) {
+          jids.push(jid);
+        }
+      }
+
+      // WhatsApp limits group subject to 25-30 chars safely
+      const cleanSubject = subject.slice(0, 25).trim() || 'DLB All Members';
+      const group = await this.socket.groupCreate(cleanSubject, jids);
+
+      let inviteLink = '';
+      try {
+        const code = await this.socket.groupInviteCode(group.id);
+        if (code) inviteLink = `https://chat.whatsapp.com/${code}`;
+      } catch (e) {
+        console.warn('[Baileys] Could not fetch group invite code:', e);
+      }
+
+      return {
+        success: true,
+        groupJid: group.id,
+        inviteLink
+      };
+    } catch (err: any) {
+      console.error('[Baileys] groupCreate error:', err);
+      return { success: false, error: err.message || 'Failed to create WhatsApp group' };
+    }
+  }
+
+  /**
+   * Add members to an existing WhatsApp group in rate-limited batches
+   */
+  public static async addParticipantsToGroup(
+    groupJid: string,
+    phoneNumbers: string[],
+    onProgress?: (processed: number, total: number) => void
+  ): Promise<{
+    success: boolean;
+    total: number;
+    added: number;
+    invited: number;
+    alreadyInGroup: number;
+    failed: number;
+    details: Array<{ phone: string; status: 'ADDED' | 'INVITED' | 'ALREADY_MEMBER' | 'FAILED'; error?: string }>;
+    error?: string;
+  }> {
+    if (this.connectionStatus !== 'CONNECTED' || !this.socket) {
+      return {
+        success: false,
+        total: phoneNumbers.length,
+        added: 0,
+        invited: 0,
+        alreadyInGroup: 0,
+        failed: phoneNumbers.length,
+        details: [],
+        error: 'WhatsApp is not connected.'
+      };
+    }
+
+    const details: Array<{ phone: string; status: 'ADDED' | 'INVITED' | 'ALREADY_MEMBER' | 'FAILED'; error?: string }> = [];
+    let addedCount = 0;
+    let invitedCount = 0;
+    let alreadyCount = 0;
+    let failedCount = 0;
+
+    // Filter and prepare valid JIDs
+    const phoneMap = new Map<string, string>(); // jid -> raw phone
+    for (const rawPhone of phoneNumbers) {
+      const jid = this.formatJid(rawPhone);
+      const clean = jid.split('@')[0];
+      if (clean && clean.length >= 10) {
+        phoneMap.set(jid, rawPhone);
+      } else {
+        details.push({ phone: rawPhone, status: 'FAILED', error: 'Invalid phone format' });
+        failedCount++;
+      }
+    }
+
+    const jidsToAdd = Array.from(phoneMap.keys());
+    const chunkSize = 15; // Safe batch size to prevent WhatsApp rate throttling
+
+    for (let i = 0; i < jidsToAdd.length; i += chunkSize) {
+      const chunk = jidsToAdd.slice(i, i + chunkSize);
+      try {
+        const results = await this.socket.groupParticipantsUpdate(groupJid, chunk, 'add');
+        for (const res of results) {
+          const raw = phoneMap.get(res.jid) || res.jid.split('@')[0];
+          const st = String(res.status);
+          if (st === '200') {
+            addedCount++;
+            details.push({ phone: raw, status: 'ADDED' });
+          } else if (st === '403') {
+            invitedCount++;
+            details.push({ phone: raw, status: 'INVITED', error: 'User privacy requires group invite link' });
+          } else if (st === '408' || st === '409') {
+            alreadyCount++;
+            details.push({ phone: raw, status: 'ALREADY_MEMBER' });
+          } else {
+            failedCount++;
+            details.push({ phone: raw, status: 'FAILED', error: `WhatsApp status code ${st}` });
+          }
+        }
+      } catch (chunkErr: any) {
+        console.error('[Baileys] Error adding batch:', chunkErr);
+        for (const jid of chunk) {
+          const raw = phoneMap.get(jid) || jid.split('@')[0];
+          failedCount++;
+          details.push({ phone: raw, status: 'FAILED', error: chunkErr.message || 'Batch update error' });
+        }
+      }
+
+      if (onProgress) {
+        onProgress(Math.min(i + chunkSize, jidsToAdd.length), jidsToAdd.length);
+      }
+
+      // Small jitter pause between chunks to respect WhatsApp rate policies
+      if (i + chunkSize < jidsToAdd.length) {
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+    }
+
+    return {
+      success: true,
+      total: phoneNumbers.length,
+      added: addedCount,
+      invited: invitedCount,
+      alreadyInGroup: alreadyCount,
+      failed: failedCount,
+      details
+    };
+  }
+
+  /**
+   * Get metadata and invite link for a group
+   */
+  public static async getGroupMetadata(groupJid: string): Promise<{
+    subject: string;
+    totalMembers: number;
+    inviteLink?: string;
+    participants: any[];
+  } | null> {
+    if (!this.socket || this.connectionStatus !== 'CONNECTED') return null;
+    try {
+      const meta = await this.socket.groupMetadata(groupJid);
+      let inviteLink: string | undefined;
+      try {
+        const code = await this.socket.groupInviteCode(groupJid);
+        if (code) inviteLink = `https://chat.whatsapp.com/${code}`;
+      } catch {}
+
+      return {
+        subject: meta.subject,
+        totalMembers: meta.participants.length,
+        inviteLink,
+        participants: meta.participants
+      };
+    } catch (e) {
+      console.error('[Baileys] getGroupMetadata error:', e);
+      return null;
     }
   }
 }
