@@ -56,34 +56,33 @@ router.get('/', async (req: Request, res: Response): Promise<any> => {
 // POST /api/groups/create - Create a new WhatsApp group
 router.post('/create', async (req: Request, res: Response): Promise<any> => {
   const { name, initialPhones = [] } = req.body;
-  const groupName = (name || 'DLB AUTO - All Members').slice(0, 25).trim();
+  const groupName = (name || 'DLB Group').slice(0, 25).trim();
+
+  if (!BaileysService.getStatus().connected) {
+    return res.status(400).json({
+      error: 'WhatsApp is not connected! Please scan the QR code to connect your WhatsApp first.'
+    });
+  }
 
   try {
-    let groupJid = 'PENDING_CREATION';
-    let inviteLink = '';
-
-    if (BaileysService.getStatus().connected && initialPhones.length > 0) {
-      const createRes = await BaileysService.createGroup(groupName, initialPhones);
-      if (!createRes.success) {
-        return res.status(400).json({ error: createRes.error || 'Failed to create WhatsApp group' });
-      }
-      groupJid = createRes.groupJid || groupJid;
-      inviteLink = createRes.inviteLink || '';
+    const createRes = await BaileysService.createGroup(groupName, initialPhones);
+    if (!createRes.success || !createRes.groupJid) {
+      return res.status(400).json({ error: createRes.error || 'Failed to create WhatsApp group' });
     }
 
     const groupId = uuidv4();
     db.prepare(`
       INSERT INTO whatsapp_groups (id, name, group_jid, invite_link, total_members, description)
       VALUES (?, ?, ?, ?, ?, 'Official DLB AUTO Marketing Broadcast Group')
-    `).run(groupId, groupName, groupJid, inviteLink, initialPhones.length);
+    `).run(groupId, groupName, createRes.groupJid, createRes.inviteLink || '', initialPhones.length);
 
     return res.json({
       success: true,
       group: {
         id: groupId,
         name: groupName,
-        group_jid: groupJid,
-        invite_link: inviteLink,
+        group_jid: createRes.groupJid,
+        invite_link: createRes.inviteLink || '',
         total_members: initialPhones.length
       }
     });
@@ -97,6 +96,12 @@ router.post('/create', async (req: Request, res: Response): Promise<any> => {
 router.post('/:id/add-members', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const { rawNumbers, numbersList = [] } = req.body;
+
+  if (!BaileysService.getStatus().connected) {
+    return res.status(400).json({
+      error: 'WhatsApp is not connected! Please scan the QR code to connect your WhatsApp before adding contacts.'
+    });
+  }
 
   const group = db.prepare('SELECT * FROM whatsapp_groups WHERE id = ?').get(id) as any;
   if (!group) {
@@ -113,7 +118,6 @@ router.post('/:id/add-members', async (req: Request, res: Response): Promise<any
   }
 
   if (rawNumbers && typeof rawNumbers === 'string') {
-    // Split by commas, newlines, semicolons, tabs, spaces
     const tokens = rawNumbers.split(/[\r\n,;\t ]+/);
     tokens.forEach((t) => {
       const c = cleanPhone(t);
@@ -125,40 +129,23 @@ router.post('/:id/add-members', async (req: Request, res: Response): Promise<any
     return res.status(400).json({ error: 'No valid phone numbers found.' });
   }
 
-  // If group does not exist on WhatsApp yet, create it on-demand
+  // If group was somehow not created on WhatsApp yet, create it now
   let groupJid = group.group_jid;
-  if (!groupJid || groupJid === 'PENDING_CREATION' || groupJid.startsWith('OFFLINE_')) {
-    if (BaileysService.getStatus().connected) {
-      const initial = allPhones.slice(0, 1);
-      const createRes = await BaileysService.createGroup(group.name, initial);
-      if (createRes.success && createRes.groupJid) {
-        groupJid = createRes.groupJid;
-        db.prepare('UPDATE whatsapp_groups SET group_jid = ?, invite_link = ? WHERE id = ?')
-          .run(groupJid, createRes.inviteLink || null, group.id);
-        group.group_jid = groupJid;
-        group.invite_link = createRes.inviteLink;
-      }
+  if (!groupJid || !groupJid.endsWith('@g.us')) {
+    const initial = allPhones.slice(0, 1);
+    const createRes = await BaileysService.createGroup(group.name, initial);
+    if (!createRes.success || !createRes.groupJid) {
+      return res.status(400).json({ error: createRes.error || 'Failed to create group on WhatsApp' });
     }
+    groupJid = createRes.groupJid;
+    group.group_jid = groupJid;
+    group.invite_link = createRes.inviteLink;
+    db.prepare('UPDATE whatsapp_groups SET group_jid = ?, invite_link = ? WHERE id = ?')
+      .run(groupJid, createRes.inviteLink || null, group.id);
   }
 
-  // Add participants via Baileys
-  let addResult = {
-    success: true,
-    total: allPhones.length,
-    added: 0,
-    invited: 0,
-    alreadyInGroup: 0,
-    failed: 0,
-    details: [] as Array<{ phone: string; status: 'ADDED' | 'INVITED' | 'ALREADY_MEMBER' | 'FAILED'; error?: string }>
-  };
-
-  if (BaileysService.getStatus().connected && groupJid && groupJid.endsWith('@g.us')) {
-    addResult = await BaileysService.addParticipantsToGroup(groupJid, allPhones);
-  } else {
-    // If offline, save into database as PENDING / ADDED
-    addResult.added = allPhones.length;
-    addResult.details = allPhones.map((p) => ({ phone: p, status: 'ADDED' }));
-  }
+  // Add participants via Baileys directly to WhatsApp
+  const addResult = await BaileysService.addParticipantsToGroup(groupJid, allPhones);
 
   // Save/Update records in SQLite group_members
   const insertMember = db.prepare(`
@@ -202,6 +189,12 @@ router.post('/:id/upload', upload.single('file'), async (req: Request, res: Resp
     return res.status(400).json({ error: 'No Excel or CSV file uploaded.' });
   }
 
+  if (!BaileysService.getStatus().connected) {
+    return res.status(400).json({
+      error: 'WhatsApp is not connected! Please scan the QR code to connect your WhatsApp before uploading contacts.'
+    });
+  }
+
   const group = db.prepare('SELECT * FROM whatsapp_groups WHERE id = ?').get(id) as any;
   if (!group) {
     return res.status(404).json({ error: 'Group not found' });
@@ -232,35 +225,20 @@ router.post('/:id/upload', upload.single('file'), async (req: Request, res: Resp
 
     // Create group on WhatsApp if needed
     let groupJid = group.group_jid;
-    if (!groupJid || groupJid === 'PENDING_CREATION' || groupJid.startsWith('OFFLINE_')) {
-      if (BaileysService.getStatus().connected) {
-        const createRes = await BaileysService.createGroup(group.name, allPhones.slice(0, 1));
-        if (createRes.success && createRes.groupJid) {
-          groupJid = createRes.groupJid;
-          db.prepare('UPDATE whatsapp_groups SET group_jid = ?, invite_link = ? WHERE id = ?')
-            .run(groupJid, createRes.inviteLink || null, group.id);
-          group.group_jid = groupJid;
-          group.invite_link = createRes.inviteLink;
-        }
+    if (!groupJid || !groupJid.endsWith('@g.us')) {
+      const initial = allPhones.slice(0, 1);
+      const createRes = await BaileysService.createGroup(group.name, initial);
+      if (!createRes.success || !createRes.groupJid) {
+        return res.status(400).json({ error: createRes.error || 'Failed to create group on WhatsApp' });
       }
+      groupJid = createRes.groupJid;
+      group.group_jid = groupJid;
+      group.invite_link = createRes.inviteLink;
+      db.prepare('UPDATE whatsapp_groups SET group_jid = ?, invite_link = ? WHERE id = ?')
+        .run(groupJid, createRes.inviteLink || null, group.id);
     }
 
-    let addResult = {
-      success: true,
-      total: allPhones.length,
-      added: 0,
-      invited: 0,
-      alreadyInGroup: 0,
-      failed: 0,
-      details: [] as Array<{ phone: string; status: 'ADDED' | 'INVITED' | 'ALREADY_MEMBER' | 'FAILED'; error?: string }>
-    };
-
-    if (BaileysService.getStatus().connected && groupJid && groupJid.endsWith('@g.us')) {
-      addResult = await BaileysService.addParticipantsToGroup(groupJid, allPhones);
-    } else {
-      addResult.added = allPhones.length;
-      addResult.details = allPhones.map((p) => ({ phone: p, status: 'ADDED' }));
-    }
+    const addResult = await BaileysService.addParticipantsToGroup(groupJid, allPhones);
 
     // Save into database
     const insertMember = db.prepare(`
@@ -324,14 +302,19 @@ router.post('/:id/send-message', async (req: Request, res: Response): Promise<an
     }
   }
 
-  let sendRes = { success: true, wamid: `wamid.GRP_${Date.now()}` };
-  if (BaileysService.getStatus().connected && group.group_jid && group.group_jid.endsWith('@g.us')) {
-    const res = await BaileysService.sendMessage(group.group_jid, messageText.trim(), mediaPath);
-    if (!res.success) {
-      return res.status(400).json({ error: res.error || 'Failed to send message to group' });
-    }
-    sendRes.wamid = res.wamid || sendRes.wamid;
+  if (!BaileysService.getStatus().connected) {
+    return res.status(400).json({ error: 'WhatsApp is not connected! Please scan the QR code in Settings first.' });
   }
+
+  if (!group.group_jid || !group.group_jid.endsWith('@g.us')) {
+    return res.status(400).json({ error: 'This group has not been created on WhatsApp yet.' });
+  }
+
+  const bRes = await BaileysService.sendMessage(group.group_jid, messageText.trim(), mediaPath);
+  if (!bRes.success) {
+    return res.status(400).json({ error: bRes.error || 'Failed to send message to group' });
+  }
+  const sendRes = { success: true, wamid: bRes.wamid || `wamid.GRP_${Date.now()}` };
 
   const msgId = uuidv4();
   db.prepare(`

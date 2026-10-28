@@ -30,8 +30,17 @@ router.get('/feed', (req: Request, res: Response) => {
 
   const feed = campaigns.map((c) => {
     const total = c.total_recipients || 1;
-    const sent = Math.min(total, c.sent_count || 0);
-    const failed = c.failed_count || 0;
+    const recipientCounts = db.prepare(`
+      SELECT 
+        COUNT(CASE WHEN status IN ('ACCEPTED', 'DELIVERED', 'READ', 'SENT') THEN 1 END) as sent,
+        COUNT(CASE WHEN status = 'FAILED' THEN 1 END) as failed,
+        COUNT(CASE WHEN status IN ('QUEUED', 'SUBMITTED') THEN 1 END) as pending
+      FROM campaign_recipients
+      WHERE campaign_id = ?
+    `).get(c.id) as any;
+
+    const sent = Math.min(total, recipientCounts?.sent || c.sent_count || 0);
+    const failed = Math.min(total - sent, recipientCounts?.failed || c.failed_count || 0);
     const pending = Math.max(0, total - (sent + failed));
     const isDone = c.status === 'COMPLETED' || (sent + failed >= total && total > 0);
     const isStopped = c.status === 'PAUSED' || c.status === 'CANCELLED';
@@ -145,6 +154,12 @@ router.post('/quick-send', (req: Request, res: Response): any => {
   const { messageText, mediaName, mediaUrl, recipientPhones, templateId } = req.body;
   if (!messageText || !messageText.trim()) {
     return res.status(400).json({ error: 'Message text cannot be empty.' });
+  }
+
+  if (!BaileysService.getStatus().connected) {
+    return res.status(400).json({
+      error: 'WhatsApp is not connected! Please scan the QR code to connect your WhatsApp before sending messages.'
+    });
   }
 
   // Find or default template

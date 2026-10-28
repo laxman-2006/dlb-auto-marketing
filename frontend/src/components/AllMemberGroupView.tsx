@@ -50,7 +50,7 @@ interface AllMemberGroupViewProps {
   onNavigateSettings?: () => void;
 }
 
-export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
+export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = ({ onNavigateSettings }) => {
   const [groups, setGroups] = useState<GroupInfo[]>([]);
   const [activeGroup, setActiveGroup] = useState<GroupInfo | null>(null);
   const [activeTab, setActiveTab] = useState<'excel' | 'paste' | 'messages' | 'members'>('excel');
@@ -371,6 +371,7 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
                 All Member Group (ऑल मेंबर ग्रुप)
               </h1>
               <span
+                onClick={!waConnected ? onNavigateSettings : undefined}
                 style={{
                   background: waConnected ? '#DCFCE7' : '#FEE2E2',
                   color: waConnected ? '#15803D' : '#B91C1C',
@@ -380,8 +381,10 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
                   borderRadius: 20,
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 5
+                  gap: 5,
+                  cursor: !waConnected ? 'pointer' : 'default'
                 }}
+                title={!waConnected ? 'Click to scan QR code in Settings' : undefined}
               >
                 <span
                   style={{
@@ -391,7 +394,7 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
                     background: waConnected ? '#16A34A' : '#DC2626'
                   }}
                 />
-                {waConnected ? `LIVE WHATSAPP (${waPhone})` : 'WHATSAPP OFFLINE'}
+                {waConnected ? `LIVE WHATSAPP (${waPhone})` : 'WHATSAPP OFFLINE (SCAN QR)'}
               </span>
             </div>
             <p style={{ fontSize: 13, color: '#64748B', margin: '3px 0 0' }}>
@@ -468,6 +471,37 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = () => {
 
       {/* Main Workspace */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 28px' }}>
+        {/* Disconnected Alert Banner */}
+        {!waConnected && (
+          <div
+            onClick={onNavigateSettings}
+            style={{
+              padding: '12px 18px',
+              borderRadius: 10,
+              background: '#FEF2F2',
+              border: '1.5px solid #FCA5A5',
+              color: '#991B1B',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 20,
+              boxShadow: '0 2px 6px rgba(220, 38, 38, 0.08)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 18 }}>⚠️</span>
+              <span>
+                <strong>WhatsApp डिस्कनेक्ट है:</strong> मोबाइल में असली ग्रुप बनाने और मेंबर्स जोड़ने के लिए पहले WhatsApp QR कोड स्कैन करें।
+              </span>
+            </div>
+            <span style={{ background: '#DC2626', color: '#ffffff', padding: '5px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}>
+              QR कोड स्कैन करें →
+            </span>
+          </div>
+        )}
         {/* CREATE NEW GROUP MODAL */}
         {showCreateModal && (
           <div

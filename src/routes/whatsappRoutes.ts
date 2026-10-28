@@ -11,26 +11,30 @@ const router = Router();
 router.get('/status', (req: Request, res: Response) => {
   const baileys = BaileysService.getStatus();
 
-  const sender = db.prepare(`
-    SELECT s.*, b.business_name
-    FROM whatsapp_senders s
-    JOIN business_accounts b ON s.business_account_id = b.id
-    WHERE s.is_default = 1
-    LIMIT 1
-  `).get() as any;
+  // If not connected and no QR is available, make sure Baileys is initializing to generate a fresh QR
+  if (!baileys.connected && !baileys.qrCodeDataUrl) {
+    BaileysService.init();
+  }
 
-  const isConnected = baileys.connected || (sender && sender.connection_status === 'CONNECTED');
-  const displayPhone = baileys.connected
-    ? baileys.displayPhoneNumber
-    : (sender?.display_phone_number || '+91 98765 00000');
+  const isConnected = baileys.connected === true;
+
+  // Sync DB sender status with real socket status
+  try {
+    db.prepare(`
+      UPDATE whatsapp_senders
+      SET connection_status = ?,
+          display_phone_number = COALESCE(?, display_phone_number)
+      WHERE is_default = 1
+    `).run(isConnected ? 'CONNECTED' : 'NOT_CONNECTED', isConnected ? baileys.displayPhoneNumber : null);
+  } catch {}
 
   res.json({
     connected: isConnected,
     state: isConnected ? 'CONNECTED' : (baileys.state || 'NOT_CONNECTED'),
-    qrCodeDataUrl: baileys.qrCodeDataUrl,
-    displayPhoneNumber: displayPhone,
-    verifiedName: baileys.verifiedName || sender?.verified_name || 'DLB AUTO MARKETING',
-    businessName: sender?.business_name || 'DLB AUTO MARKETING',
+    qrCodeDataUrl: isConnected ? null : baileys.qrCodeDataUrl,
+    displayPhoneNumber: isConnected ? baileys.displayPhoneNumber : null,
+    verifiedName: isConnected ? (baileys.verifiedName || 'DLB AUTO MARKETING') : null,
+    businessName: 'DLB AUTO MARKETING',
     lastVerifiedAt: new Date().toISOString()
   });
 });

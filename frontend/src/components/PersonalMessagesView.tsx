@@ -242,14 +242,59 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
                 Live WhatsApp {connectedNumber ? `(+${connectedNumber.replace(/[^\d]/g, '')})` : 'Connected'}
               </span>
             ) : (
-              <span className="status-tag action-required" style={{ fontSize: '11px' }}>
-                WhatsApp Standby
+              <span
+                onClick={onNavigateSettings}
+                className="status-tag"
+                style={{
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  background: '#FEE2E2',
+                  color: '#991B1B',
+                  fontWeight: 700,
+                  padding: '3px 10px',
+                  borderRadius: '12px'
+                }}
+                title="Click to scan QR code in Settings"
+              >
+                🔴 Disconnected — Scan QR Code
               </span>
             )}
           </div>
           <div className="conv-header-sub">One message — each recipient receives their own direct copy</div>
         </div>
       </header>
+
+      {/* Disconnected Alert Banner */}
+      {!whatsappConnected && (
+        <div
+          onClick={onNavigateSettings}
+          style={{
+            margin: '14px 28px 0',
+            padding: '12px 18px',
+            background: '#FEF2F2',
+            border: '1.5px solid #FCA5A5',
+            borderRadius: '10px',
+            color: '#991B1B',
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            boxShadow: '0 2px 6px rgba(220, 38, 38, 0.08)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '18px' }}>⚠️</span>
+            <span>
+              <strong>WhatsApp डिस्कनेक्ट है:</strong> नया WhatsApp नंबर कनेक्ट करने के लिए यहाँ क्लिक करें और QR कोड स्कैन करें।
+            </span>
+          </div>
+          <span style={{ background: '#DC2626', color: '#ffffff', padding: '5px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}>
+            QR कोड स्कैन करें →
+          </span>
+        </div>
+      )}
 
       {/* SECTION 5: Campaign Progress Display */}
       {latestCamp && (

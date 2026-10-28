@@ -337,6 +337,14 @@ export class BaileysService {
         }
       }
 
+      // If no initial participants provided, include self so WhatsApp multi-device can create the group
+      if (jids.length === 0 && this.socket?.user?.id) {
+        const selfPhone = this.socket.user.id.split(':')[0].replace(/[^\d]/g, '');
+        if (selfPhone) {
+          jids.push(`${selfPhone}@s.whatsapp.net`);
+        }
+      }
+
       // WhatsApp limits group subject to 25-30 chars safely
       const cleanSubject = subject.slice(0, 25).trim() || 'DLB All Members';
       const group = await this.socket.groupCreate(cleanSubject, jids);
