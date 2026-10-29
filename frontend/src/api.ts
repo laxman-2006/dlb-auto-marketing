@@ -88,6 +88,8 @@ export const api = {
       method: 'POST',
       body: formData
     }),
+  getPacingStatus: () => fetchJson<any>(`${API_BASE}/campaigns/pacing-status`),
+  getGroupAdderStatus: () => fetchJson<any>(`${API_BASE}/groups/adder-status`),
   estimateCampaign: (templateId: string, contactSegment: string) =>
     fetchJson<any>(`${API_BASE}/campaigns/estimate`, {
       method: 'POST',

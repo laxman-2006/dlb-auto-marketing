@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import { db } from '../db/database';
 import { BaileysService } from '../services/baileysService';
+import { GroupSlowAdder } from '../services/groupSlowAdder';
 
 const router = Router();
 const upload = multer({
@@ -148,8 +149,11 @@ router.post('/:id/add-members', async (req: Request, res: Response): Promise<any
       .run(groupJid, createRes.inviteLink || null, group.id);
   }
 
-  // Add participants via Baileys directly to WhatsApp
-  const addResult = await BaileysService.addParticipantsToGroup(groupJid, allPhones);
+  // If more than 2 members are submitted, add the first 1-2 now and queue the rest for safe anti-ban background addition (4-5/hour)
+  const immediatePhones = allPhones.slice(0, 2);
+  const queuedPhones = allPhones.slice(2);
+
+  const addResult = await BaileysService.addParticipantsToGroup(groupJid, immediatePhones);
 
   // Save/Update records in SQLite group_members
   const insertMember = db.prepare(`
@@ -161,13 +165,16 @@ router.post('/:id/add-members', async (req: Request, res: Response): Promise<any
       added_at = CURRENT_TIMESTAMP
   `);
 
-  const tx = db.transaction((details) => {
+  const tx = db.transaction((details: any[], queued: string[]) => {
     for (const d of details) {
       insertMember.run(uuidv4(), group.id, d.phone, d.status, d.error || null);
     }
+    for (const p of queued) {
+      insertMember.run(uuidv4(), group.id, p, 'QUEUED', null);
+    }
   });
 
-  tx(addResult.details);
+  tx(addResult.details, queuedPhones);
 
   // Update total members count
   const totalInDb = (db.prepare('SELECT COUNT(*) as c FROM group_members WHERE group_id = ? AND status IN (\'ADDED\', \'ALREADY_MEMBER\')').get(group.id) as any)?.c || 0;
@@ -178,15 +185,19 @@ router.post('/:id/add-members', async (req: Request, res: Response): Promise<any
     success: true,
     total: allPhones.length,
     added: addResult.added,
+    queuedForSafeAddition: queuedPhones.length,
     invited: addResult.invited,
     alreadyInGroup: addResult.alreadyInGroup,
     failed: addResult.failed,
     inviteLink: group.invite_link,
-    details: addResult.details.slice(0, 50) // preview first 50
+    message: queuedPhones.length > 0 
+      ? `Added ${addResult.added} members immediately. ${queuedPhones.length} members queued in Safe Anti-Ban Mode (4–5 members/hour)!`
+      : 'Added contacts to group.',
+    details: addResult.details.slice(0, 50)
   });
 });
 
-// POST /api/groups/:id/upload - Upload Excel/CSV with thousands of numbers and add to group
+// POST /api/groups/:id/upload - Upload Excel/CSV with thousands of numbers and add to group slowly
 router.post('/:id/upload', upload.single('file'), async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   if (!req.file) {
@@ -242,7 +253,11 @@ router.post('/:id/upload', upload.single('file'), async (req: Request, res: Resp
         .run(groupJid, createRes.inviteLink || null, group.id);
     }
 
-    const addResult = await BaileysService.addParticipantsToGroup(groupJid, allPhones);
+    // Safe Anti-Ban Group Pacing: Add first 1-2 immediately, queue the rest at 4-5/hour
+    const immediatePhones = allPhones.slice(0, 2);
+    const queuedPhones = allPhones.slice(2);
+
+    const addResult = await BaileysService.addParticipantsToGroup(groupJid, immediatePhones);
 
     // Save into database
     const insertMember = db.prepare(`
@@ -254,13 +269,16 @@ router.post('/:id/upload', upload.single('file'), async (req: Request, res: Resp
         added_at = CURRENT_TIMESTAMP
     `);
 
-    const tx = db.transaction((details) => {
+    const tx = db.transaction((details: any[], queued: string[]) => {
       for (const d of details) {
         insertMember.run(uuidv4(), group.id, d.phone, d.status, d.error || null);
       }
+      for (const p of queued) {
+        insertMember.run(uuidv4(), group.id, p, 'QUEUED', null);
+      }
     });
 
-    tx(addResult.details);
+    tx(addResult.details, queuedPhones);
 
     const totalInDb = (db.prepare('SELECT COUNT(*) as c FROM group_members WHERE group_id = ? AND status IN (\'ADDED\', \'ALREADY_MEMBER\')').get(group.id) as any)?.c || 0;
     db.prepare('UPDATE whatsapp_groups SET total_members = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
@@ -271,16 +289,25 @@ router.post('/:id/upload', upload.single('file'), async (req: Request, res: Resp
       fileName: req.file.originalname,
       totalDetected: allPhones.length,
       added: addResult.added,
+      queuedForSafeAddition: queuedPhones.length,
       invited: addResult.invited,
       alreadyInGroup: addResult.alreadyInGroup,
       failed: addResult.failed,
       inviteLink: group.invite_link,
+      message: queuedPhones.length > 0 
+        ? `Added ${addResult.added} members immediately. ${queuedPhones.length} members queued in Safe Anti-Ban Mode (4–5 members/hour)!`
+        : 'Added contacts to group.',
       details: addResult.details.slice(0, 50)
     });
   } catch (err: any) {
     console.error('[GroupRoutes] Upload error:', err);
     return res.status(500).json({ error: err.message || 'Failed to process Excel file' });
   }
+});
+
+// GET /api/groups/adder-status - Status of slow safe group member additions
+router.get('/adder-status', (_req: Request, res: Response): any => {
+  return res.json({ success: true, status: GroupSlowAdder.getStatus() });
 });
 
 // POST /api/groups/:id/send-message - Broadcast a message to the group

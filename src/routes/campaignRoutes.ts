@@ -283,12 +283,19 @@ router.post('/quick-send', (req: Request, res: Response): any => {
   });
 });
 
+// GET /api/campaigns/pacing-status - Live WhatsApp Anti-Ban speed pacing telemetry
+router.get('/pacing-status', (req: Request, res: Response): any => {
+  return res.json({ success: true, pacing: QueueService.getPacingStatus() });
+});
+
 // POST /api/campaigns/upload-broadcast - Upload Excel file to broadcast WhatsApp personal messages to all contacts
 router.post('/upload-broadcast', upload.fields([{ name: 'file', maxCount: 1 }, { name: 'media', maxCount: 1 }]), async (req: Request, res: Response): Promise<any> => {
   const files = req.files as { [fieldname: string]: Express.Multer.File[] };
   const excelFile = files?.file?.[0];
   const mediaFile = files?.media?.[0];
   const messageText = (req.body.messageText || '').trim();
+  const userPhoneCol = (req.body.phoneColumn || '').trim().toLowerCase();
+  const userNameCol = (req.body.nameColumn || '').trim().toLowerCase();
 
   if (!excelFile) {
     return res.status(400).json({ error: 'Please upload an Excel or CSV file.' });
@@ -306,22 +313,98 @@ router.post('/upload-broadcast', upload.fields([{ name: 'file', maxCount: 1 }, {
     const seen = new Set<string>();
     const validRecipients: { id: string; name: string; normalized_phone: string }[] = [];
 
-    for (const row of rows) {
-      if (!Array.isArray(row)) continue;
-      for (const cell of row) {
-        if (!cell) continue;
-        const raw = String(cell).trim();
-        const norm = normalizePhoneNumber(raw, '91');
+    // Detect header column indices if first row has text headers
+    let phoneColIdx = -1;
+    let nameColIdx = -1;
+
+    if (rows.length > 0 && Array.isArray(rows[0])) {
+      const headerRow = rows[0].map((h: any) => String(h || '').trim().toLowerCase());
+      
+      // Check user specified columns first
+      if (userPhoneCol) {
+        phoneColIdx = headerRow.findIndex((h: string) => h === userPhoneCol || h.includes(userPhoneCol));
+      }
+      if (userNameCol) {
+        nameColIdx = headerRow.findIndex((h: string) => h === userNameCol || h.includes(userNameCol));
+      }
+
+      // Auto-detect if not matched
+      if (phoneColIdx === -1) {
+        phoneColIdx = headerRow.findIndex((h: string) => 
+          h.includes('phone') || h.includes('mobile') || h.includes('number') || h.includes('contact') || h.includes('फोन') || h.includes('मोबाइल')
+        );
+      }
+      if (nameColIdx === -1) {
+        nameColIdx = headerRow.findIndex((h: string) => 
+          h.includes('name') || h.includes('customer') || h.includes('client') || h.includes('naam') || h.includes('नाम') || h.includes('ग्राहक')
+        );
+      }
+    }
+
+    const startRowIdx = (phoneColIdx !== -1 || nameColIdx !== -1) ? 1 : 0;
+
+    for (let r = startRowIdx; r < rows.length; r++) {
+      const row = rows[r];
+      if (!Array.isArray(row) || row.length === 0) continue;
+
+      let foundPhone: string | null = null;
+      let foundName: string | null = null;
+
+      // 1. Try header indices if matched
+      if (phoneColIdx !== -1 && row[phoneColIdx] !== undefined) {
+        const norm = normalizePhoneNumber(String(row[phoneColIdx]).trim(), '91');
         if (norm.isValid && norm.isMobile) {
-          if (!seen.has(norm.normalized)) {
-            seen.add(norm.normalized);
-            validRecipients.push({
-              id: uuidv4(),
-              name: 'Valued Customer',
-              normalized_phone: norm.normalized
-            });
+          foundPhone = norm.normalized;
+        }
+      }
+      if (nameColIdx !== -1 && row[nameColIdx] !== undefined) {
+        const rawN = String(row[nameColIdx]).trim();
+        if (rawN && !/^\d+$/.test(rawN) && rawN.length >= 2 && rawN.length <= 60) {
+          foundName = rawN;
+        }
+      }
+
+      // 2. Fallback: inspect each cell in the row
+      if (!foundPhone) {
+        for (let c = 0; c < row.length; c++) {
+          const cell = row[c];
+          if (!cell) continue;
+          const norm = normalizePhoneNumber(String(cell).trim(), '91');
+          if (norm.isValid && norm.isMobile) {
+            foundPhone = norm.normalized;
+            break;
           }
         }
+      }
+
+      if (foundPhone && !foundName) {
+        for (let c = 0; c < row.length; c++) {
+          const cell = row[c];
+          if (!cell) continue;
+          const str = String(cell).trim();
+          // Filter out phone numbers, pure digits, URLs, emails, and typical table headers
+          if (
+            str.length >= 2 &&
+            str.length <= 60 &&
+            !/^\+?\d+$/.test(str) &&
+            !str.includes('@') &&
+            !str.includes('http') &&
+            !['name', 'phone', 'mobile', 'sr', 's.no', 'sr no', 'id', 'customer', 'status'].includes(str.toLowerCase()) &&
+            /[a-zA-Z\u0900-\u097F]/.test(str)
+          ) {
+            foundName = str;
+            break;
+          }
+        }
+      }
+
+      if (foundPhone && !seen.has(foundPhone)) {
+        seen.add(foundPhone);
+        validRecipients.push({
+          id: uuidv4(),
+          name: foundName || 'Valued Customer',
+          normalized_phone: foundPhone
+        });
       }
     }
 
@@ -384,7 +467,7 @@ router.post('/upload-broadcast', upload.fields([{ name: 'file', maxCount: 1 }, {
       campaignId: campId,
       totalRecipients: validRecipients.length,
       fileName: excelFile.originalname,
-      message: `Successfully queued personal messages for all ${validRecipients.length.toLocaleString()} contacts!`
+      message: `Successfully queued ${validRecipients.length.toLocaleString()} contacts in Anti-Ban Safe Mode (10–15 messages/hour)!`
     });
   } catch (err: any) {
     console.error('[WhatsApp Excel Broadcast Error]:', err);

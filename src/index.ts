@@ -93,10 +93,12 @@ app.get('/{*splat}', (_req, res) => {
 });
 
 import { BaileysService } from './services/baileysService';
+import { GroupSlowAdder } from './services/groupSlowAdder';
 
 // Initialize database, background queue worker & WhatsApp/Telegram sessions
 initDatabase();
 QueueService.initQueueWorker();
+GroupSlowAdder.init();
 BaileysService.init();
 TelegramService.init();
 

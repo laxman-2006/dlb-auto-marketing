@@ -70,6 +70,8 @@ export const UploadExcelModal: React.FC<Props> = ({ onClose, onSuccess, mode = '
         const formData = new FormData();
         formData.append('file', file);
         formData.append('messageText', broadcastMsg.trim() || 'Photo Attachment');
+        if (phoneCol) formData.append('phoneColumn', phoneCol);
+        if (nameCol) formData.append('nameColumn', nameCol);
         if (attachedMedia) formData.append('media', attachedMedia);
 
         const res = await api.uploadBroadcastWhatsApp(formData);
@@ -138,6 +140,14 @@ export const UploadExcelModal: React.FC<Props> = ({ onClose, onSuccess, mode = '
   const brandColor = mode === 'telegram' ? '#0088cc' : '#008069';
   const channelTitle = mode === 'telegram' ? 'Telegram Personal Message' : mode === 'whatsapp' ? 'WhatsApp Personal Message' : 'Contacts';
 
+  // Current IST time greeting helper for preview
+  const getPreviewGreeting = () => {
+    const hr = new Date().getHours();
+    if (hr >= 4 && hr < 12) return 'Good morning';
+    if (hr >= 12 && hr < 17) return 'Good afternoon';
+    return 'Good evening';
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-card" style={{ maxWidth: '720px' }} onClick={(e) => e.stopPropagation()}>
@@ -176,7 +186,7 @@ export const UploadExcelModal: React.FC<Props> = ({ onClose, onSuccess, mode = '
               {isInspecting ? 'Inspecting workbook...' : 'Click to select .xlsx or .csv file'}
             </div>
             <div style={{ fontSize: '12px', color: '#54656f' }}>
-              Accepts 11,000 to 25,000+ rows with auto mobile number extraction
+              Accepts 11,000 to 25,000+ rows with auto mobile number & customer name extraction
             </div>
             <input
               id="modalFileInput"
@@ -203,6 +213,42 @@ export const UploadExcelModal: React.FC<Props> = ({ onClose, onSuccess, mode = '
 
             {isBroadcast ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '16px' }}>
+                {/* Column Mapping for Names & Phone */}
+                {sheetInfo.headers && sheetInfo.headers.length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <div>
+                      <label style={{ fontSize: '11.5px', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '3px' }}>
+                        👤 Name Column (ग्राहक का नाम):
+                      </label>
+                      <select
+                        style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12.5px' }}
+                        value={nameCol}
+                        onChange={(e) => setNameCol(e.target.value)}
+                      >
+                        <option value="">-- Auto-Detect Name from Sheet --</option>
+                        {sheetInfo.headers.map((h: string) => (
+                          <option key={h} value={h}>{h}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11.5px', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '3px' }}>
+                        📱 Phone Column (मोबाइल नंबर):
+                      </label>
+                      <select
+                        style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12.5px' }}
+                        value={phoneCol}
+                        onChange={(e) => setPhoneCol(e.target.value)}
+                      >
+                        <option value="">-- Auto-Detect Phone from Sheet --</option>
+                        {sheetInfo.headers.map((h: string) => (
+                          <option key={h} value={h}>{h}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
                     संदेश (Message to send to all contacts):
@@ -222,6 +268,19 @@ export const UploadExcelModal: React.FC<Props> = ({ onClose, onSuccess, mode = '
                       resize: 'vertical'
                     }}
                   />
+                </div>
+
+                {/* Live Greeting & Personalization Preview */}
+                <div style={{ background: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: '8px', padding: '10px 14px', fontSize: '12.5px' }}>
+                  <div style={{ fontWeight: 700, color: '#0f766e', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    ✨ Smart Name Personalization (हर ग्राहक को नाम से ग्रीटिंग):
+                  </div>
+                  <div style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '6px', border: '1px dashed #2dd4bf', color: '#134e4a', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+                    {`${getPreviewGreeting()} [Customer Name] जी,\n\n${broadcastMsg || 'DLB AUTO MARKETING me aapka swagat hai...'}`}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#0f766e', marginTop: '4px' }}>
+                    * एक्सेल में दिए गए नाम और समय (सुबह / दोपहर / शाम) के अनुसार हर ग्राहक को पर्सनलाइज़्ड ग्रीटिंग अपने आप जुड़कर जाएगी।
+                  </div>
                 </div>
 
                 <div>
@@ -245,8 +304,8 @@ export const UploadExcelModal: React.FC<Props> = ({ onClose, onSuccess, mode = '
                   )}
                 </div>
 
-                <div style={{ padding: '10px 14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', fontSize: '12.5px', color: '#166534' }}>
-                  ⚡ <strong>100% Reliable Delivery:</strong> इस एक्सेल के सभी {sheetInfo.totalRows.toLocaleString()} नंबरों को एक-एक करके पर्सनल कॉपी भेजी जाएगी। बैकग्राउंड कतार में सुरक्षित एंटी-फ्लड डिलीवरी के साथ भेजा जाएगा ताकि कोई मैसेज पेंडिंग या फेल न रहे।
+                <div style={{ padding: '10px 14px', background: '#ecfdf5', border: '1.5px solid #6ee7b7', borderRadius: '8px', fontSize: '12.5px', color: '#065f46' }}>
+                  🛡️ <strong>WhatsApp Anti-Ban Safe Speed Active:</strong> 1 घंटे में केवल <strong>10 से 15 मैसेज</strong> (Random delays: 2 मिनट, 3 मिनट, 5 मिनट, 10 मिनट के अंतराल पर)। यह सिस्टम 24 घंटे लगातार चलेगा और आपके WhatsApp नंबर पर कोई स्ट्राइक या बैन नहीं लगेगा!
                 </div>
               </div>
             ) : (

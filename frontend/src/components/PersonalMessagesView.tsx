@@ -49,6 +49,9 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
   const [whatsappConnected, setWhatsappConnected] = useState(false);
   const [connectedNumber, setConnectedNumber] = useState('');
 
+  // Anti-Ban Safe Pacing Telemetry
+  const [pacingStatus, setPacingStatus] = useState<any>(null);
+
   // Search WhatsApp Drawer matching Screenshot 2
   const [showSearchDrawer, setShowSearchDrawer] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -81,6 +84,15 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
     }
   };
 
+  const loadPacing = async () => {
+    try {
+      const res = await api.getPacingStatus();
+      if (res?.success && res?.pacing) {
+        setPacingStatus(res.pacing);
+      }
+    } catch {}
+  };
+
   const loadFeed = async () => {
     try {
       const data = await api.getCampaignsFeed();
@@ -105,7 +117,11 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
     loadFeed();
     loadTemplates();
     loadStatus();
-    const interval = setInterval(loadFeed, 4000);
+    loadPacing();
+    const interval = setInterval(() => {
+      loadFeed();
+      loadPacing();
+    }, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -313,6 +329,78 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
           </span>
         </div>
       )}
+
+      {/* Live WhatsApp Anti-Ban Safe Speed Status Card */}
+      <div style={{
+        margin: '12px 28px 0',
+        padding: '12px 18px',
+        background: 'linear-gradient(135deg, #f0fdf4 0%, #e6f7ef 100%)',
+        border: '1.5px solid #86efac',
+        borderRadius: '12px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        boxShadow: '0 2px 8px rgba(34, 197, 94, 0.08)'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '20px' }}>🛡️</span>
+            <div>
+              <div style={{ fontSize: '13.5px', fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                WhatsApp Anti-Ban Safe Mode Active
+                <span style={{ fontSize: '11px', background: '#16a34a', color: '#ffffff', padding: '2px 8px', borderRadius: '10px', fontWeight: 700 }}>
+                  10–15 msgs/hour
+                </span>
+              </div>
+              <div style={{ fontSize: '12px', color: '#15803d' }}>
+                Human-randomized delays (2m, 3m, 5m, 10m) • Running 24/7 continuously without WhatsApp ban risk
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', background: '#ffffff', padding: '6px 14px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 700 }}>THIS HOUR</div>
+              <div style={{ fontSize: '14px', fontWeight: 800, color: '#166534' }}>
+                {pacingStatus?.sentLastHour ?? 0} <span style={{ fontSize: '11px', color: '#94a3b8' }}>/ 15 max</span>
+              </div>
+            </div>
+            <div style={{ width: '1px', height: '24px', background: '#cbd5e1' }} />
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 700 }}>NEXT DISPATCH</div>
+              <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f766e' }}>
+                {pacingStatus?.isDispatching 
+                  ? '⚡ Sending now' 
+                  : (pacingStatus?.nextSendInSeconds > 0 
+                      ? `${Math.floor(pacingStatus.nextSendInSeconds / 60)}m ${pacingStatus.nextSendInSeconds % 60}s` 
+                      : 'Ready')}
+              </div>
+            </div>
+            {pacingStatus?.totalQueued > 0 && (
+              <>
+                <div style={{ width: '1px', height: '24px', background: '#cbd5e1' }} />
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 700 }}>QUEUED</div>
+                  <div style={{ fontSize: '14px', fontWeight: 800, color: '#0369a1' }}>
+                    {pacingStatus.totalQueued.toLocaleString()}
+                  </div>
+                </div>
+                <div style={{ width: '1px', height: '24px', background: '#cbd5e1' }} />
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 700 }}>EST. TIME</div>
+                  <div style={{ fontSize: '14px', fontWeight: 800, color: '#4338ca' }}>
+                    ~{pacingStatus.estimatedDaysRemaining} days
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div style={{ fontSize: '11.5px', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px', borderTop: '1px dashed #bbf7d0', paddingTop: '6px' }}>
+          <span>👤 <strong>Smart Greeting Active:</strong> समय व नाम अनुसार (Good morning / afternoon / evening [Name] जी) स्वतः जुड़कर जाता है।</span>
+        </div>
+      </div>
 
       {/* SECTION 5: Campaign Progress Display for Selected or Latest Batch */}
       {activeCamp && (

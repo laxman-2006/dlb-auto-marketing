@@ -10,6 +10,150 @@ export class QueueService {
   private static pausedCampaigns = new Set<string>();
   private static workerInterval: NodeJS.Timeout | null = null;
 
+  // Ultra-Safe Anti-Ban Rate Limiter State (10 to 15 messages per hour)
+  private static recentWhatsAppTimestamps: number[] = [];
+  private static nextAllowedWhatsAppSendTime: number = 0;
+  private static isWhatsAppDispatching = false;
+  private static currentDelaySec = 0;
+  private static readonly MAX_MESSAGES_PER_HOUR = 15;
+
+  /**
+   * Cleans up send timestamps older than 60 minutes
+   */
+  private static cleanupRecentTimestamps(): void {
+    const oneHourAgo = Date.now() - 3600 * 1000;
+    this.recentWhatsAppTimestamps = this.recentWhatsAppTimestamps.filter((ts) => ts > oneHourAgo);
+  }
+
+  /**
+   * Calculates human-like randomized delay between message sends (averaging ~4.5 minutes, i.e., ~13 msgs/hour)
+   * User instructions: "ek message 5 min me, dubara 3 min me, vapas 4 min me, 5 min, 10 min, kabhi 2 min, kabhi 3 min"
+   */
+  private static calculateNextHumanDelay(): number {
+    const choices = [
+      { min: 120, max: 180, weight: 15 }, // 2 - 3 min
+      { min: 180, max: 270, weight: 35 }, // 3 - 4.5 min
+      { min: 270, max: 360, weight: 30 }, // 4.5 - 6 min
+      { min: 360, max: 480, weight: 12 }, // 6 - 8 min
+      { min: 540, max: 660, weight: 8 },  // 9 - 11 min (natural human pause)
+    ];
+    const rand = Math.random() * 100;
+    let cum = 0;
+    for (const c of choices) {
+      cum += c.weight;
+      if (rand <= cum) {
+        return Math.floor(Math.random() * (c.max - c.min + 1)) + c.min;
+      }
+    }
+    return 240; // Default fallback 4 minutes
+  }
+
+  /**
+   * Helper to get IST greeting based on current hour in India (UTC+5:30)
+   */
+  public static getISTGreeting(): string {
+    const now = new Date();
+    const utcMs = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const istDate = new Date(utcMs + (3600000 * 5.5));
+    const hour = istDate.getHours();
+
+    if (hour >= 4 && hour < 12) {
+      return 'Good morning';
+    } else if (hour >= 12 && hour < 17) {
+      return 'Good afternoon';
+    } else {
+      return 'Good evening';
+    }
+  }
+
+  /**
+   * Builds personalized message text with dynamic customer name & time-of-day greeting
+   */
+  public static personalizeMessage(rawBody: string, customerName?: string): string {
+    const cleanName = (customerName || '').trim();
+    const isNameValid = cleanName && 
+      !['valued customer', 'customer', 'null', 'undefined', 'n/a', 'user', 'client', 'none'].includes(cleanName.toLowerCase());
+
+    let body = (rawBody || '').trim();
+    if (!body) {
+      body = 'नमस्ते! DLB AUTO MARKETING में आपका स्वागत है।';
+    }
+
+    // 1. Replace explicit template placeholders: {{name}}, {name}, {{1}}, etc.
+    if (isNameValid) {
+      body = body.replace(/\{\{name\}\}|\{name\}/gi, cleanName);
+      body = body.replace(/\{\{1\}\}/g, cleanName);
+    } else {
+      body = body.replace(/\{\{name\}\}|\{name\}|\{\{1\}\}/gi, 'Customer');
+    }
+
+    const greeting = this.getISTGreeting();
+    const lower = body.toLowerCase();
+
+    // Check if body already starts with a greeting
+    const startsWithGreeting = 
+      lower.startsWith('good morning') ||
+      lower.startsWith('good afternoon') ||
+      lower.startsWith('good evening') ||
+      lower.startsWith('good night') ||
+      lower.startsWith('नमस्ते') ||
+      lower.startsWith('namaste') ||
+      lower.startsWith('hello') ||
+      lower.startsWith('hi ') ||
+      lower.startsWith('hey ');
+
+    if (!startsWithGreeting) {
+      if (isNameValid) {
+        return `${greeting} ${cleanName} जी,\n\n${body}`;
+      } else {
+        return `${greeting}!\n\n${body}`;
+      }
+    } else if (isNameValid && !body.includes(cleanName)) {
+      return `${greeting} ${cleanName} जी,\n\n${body}`;
+    }
+
+    return body;
+  }
+
+  /**
+   * Returns live anti-ban pacing status for UI dashboard
+   */
+  public static getPacingStatus() {
+    this.cleanupRecentTimestamps();
+
+    const now = Date.now();
+    let nextSendInSec = 0;
+    if (this.nextAllowedWhatsAppSendTime > now) {
+      nextSendInSec = Math.ceil((this.nextAllowedWhatsAppSendTime - now) / 1000);
+    }
+
+    const queuedRow = db.prepare(`
+      SELECT COUNT(*) as count FROM campaign_recipients WHERE status = 'QUEUED'
+    `).get() as { count: number };
+    const totalQueued = queuedRow?.count || 0;
+
+    const hourlyCap = this.MAX_MESSAGES_PER_HOUR;
+    const sentLastHour = this.recentWhatsAppTimestamps.length;
+    
+    // Average speed is ~12.5 messages/hour in 24/7 safe mode
+    const estimatedHoursRemaining = totalQueued > 0 ? (totalQueued / 12.5).toFixed(1) : '0';
+    const estimatedDaysRemaining = totalQueued > 0 ? (totalQueued / (12.5 * 24)).toFixed(1) : '0';
+
+    return {
+      mode: 'ANTI_BAN_SAFE',
+      isDispatching: this.isWhatsAppDispatching,
+      hourlyCap,
+      sentLastHour,
+      nextSendInSeconds: nextSendInSec,
+      nextAllowedSendTime: this.nextAllowedWhatsAppSendTime ? new Date(this.nextAllowedWhatsAppSendTime).toISOString() : null,
+      currentDelaySeconds: this.currentDelaySec,
+      totalQueued,
+      estimatedHoursRemaining,
+      estimatedDaysRemaining,
+      speedText: '10–15 messages/hour (Safe Anti-Ban Mode: Randomized 2m–10m intervals, 24/7 continuous)'
+    };
+  }
+
   /**
    * Initializes queue worker and recovers uncompleted jobs after server restart
    */
@@ -37,11 +181,11 @@ export class QueueService {
       console.log(`[Queue] Reset ${resetStuck.changes} stuck unconfirmed recipients to QUEUED.`);
     }
 
-    // Start worker loop with throttled polling (e.g. every 250ms)
+    // Start worker loop with throttled polling (e.g. every 500ms)
     if (this.workerInterval) clearInterval(this.workerInterval);
     this.workerInterval = setInterval(() => {
       this.processNextBatch();
-    }, 250);
+    }, 500);
 
     this.isRunning = true;
   }
@@ -111,8 +255,30 @@ export class QueueService {
    * Processes the next batch of queued recipients across active campaigns
    */
   private static async processNextBatch() {
-    if (this.activeJobs >= config.queue.concurrency) {
-      return;
+    const isBaileys = BaileysService.getStatus().connected;
+
+    // Strict Anti-Ban Throttling for WhatsApp (Baileys)
+    if (isBaileys) {
+      if (this.isWhatsAppDispatching || this.activeJobs > 0) {
+        return;
+      }
+
+      this.cleanupRecentTimestamps();
+
+      // Check rolling 1-hour cap (max 15 messages/hour)
+      if (this.recentWhatsAppTimestamps.length >= this.MAX_MESSAGES_PER_HOUR) {
+        // Holding until oldest message falls out of 1-hour window
+        return;
+      }
+
+      // Check randomized jitter delay between messages
+      if (Date.now() < this.nextAllowedWhatsAppSendTime) {
+        return;
+      }
+    } else {
+      if (this.activeJobs >= config.queue.concurrency) {
+        return;
+      }
     }
 
     // Find the next eligible queued recipient from any active campaign
@@ -157,7 +323,7 @@ export class QueueService {
     }
 
     // Strict template enforcement: Template MUST be APPROVED by Meta (only if sending via Meta Cloud API)
-    if (!BaileysService.getStatus().connected && nextRecipient.template_status !== 'APPROVED') {
+    if (!isBaileys && nextRecipient.template_status !== 'APPROVED') {
       db.prepare(`
         UPDATE campaign_recipients
         SET status = 'FAILED', error_message = 'Template is not approved by Meta (${nextRecipient.template_status})'
@@ -201,15 +367,30 @@ export class QueueService {
     `).run(nextRecipient.campaign_id);
 
     this.activeJobs++;
+    if (isBaileys) {
+      this.isWhatsAppDispatching = true;
+    }
 
     // Execute message dispatch
     this.dispatchMessage(nextRecipient).finally(() => {
       this.activeJobs--;
+
+      if (isBaileys) {
+        // Record timestamp of successful or attempted send into rolling 1-hour window
+        this.recentWhatsAppTimestamps.push(Date.now());
+
+        // Calculate next randomized human delay (10-15 messages per hour)
+        this.currentDelaySec = this.calculateNextHumanDelay();
+        this.nextAllowedWhatsAppSendTime = Date.now() + (this.currentDelaySec * 1000);
+        this.isWhatsAppDispatching = false;
+
+        console.log(`[Queue Safe Anti-Ban] Sent message to ${nextRecipient.phone_number}. Next message in ${Math.round(this.currentDelaySec / 60)}m ${this.currentDelaySec % 60}s (${this.recentWhatsAppTimestamps.length}/${this.MAX_MESSAGES_PER_HOUR} this hour)`);
+      }
     });
   }
 
   /**
-   * Dispatches message through Meta WhatsApp Cloud API and records in send ledger
+   * Dispatches message through Meta WhatsApp Cloud API or Baileys with personalized customer name
    */
   private static async dispatchMessage(item: any) {
     try {
@@ -217,20 +398,20 @@ export class QueueService {
 
       let sendResult: { success: boolean; wamid?: string; error?: string };
 
-      let body = item.custom_message;
-      if (!body || !body.trim()) {
+      // Generate personalized body with time-of-day greeting (Good morning/afternoon/evening) and customer name
+      let rawBody = item.custom_message;
+      if (!rawBody || !rawBody.trim()) {
         const template = db.prepare('SELECT body_text FROM message_templates WHERE id = ?').get(item.template_id) as any;
-        body = template?.body_text || `Hello, this is DLB AUTO MARKETING!`;
+        rawBody = template?.body_text || `Hello, this is DLB AUTO MARKETING!`;
         vars.forEach((v: string, idx: number) => {
-          body = body.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), v);
+          rawBody = rawBody.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), v);
         });
       }
 
-      if (BaileysService.getStatus().connected) {
-        // Safe anti-ban randomized jitter delay (1.2s - 2.5s)
-        const jitterMs = Math.floor(Math.random() * 1300) + 1200;
-        await new Promise((r) => setTimeout(r, jitterMs));
+      const body = this.personalizeMessage(rawBody, item.customer_name);
 
+      if (BaileysService.getStatus().connected) {
+        // Direct WhatsApp dispatch
         sendResult = await BaileysService.sendMessage(item.phone_number, body);
       } else {
         sendResult = await MetaWhatsAppService.sendTemplateMessage({
@@ -274,7 +455,7 @@ export class QueueService {
         );
       } else {
         // Failed
-        const errorMsg = sendResult.error || 'Failed to dispatch via WhatsApp Cloud API';
+        const errorMsg = sendResult.error || 'Failed to dispatch via WhatsApp Provider';
         db.prepare(`
           UPDATE campaign_recipients
           SET status = 'FAILED', error_message = ?, updated_at = CURRENT_TIMESTAMP
