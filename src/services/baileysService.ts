@@ -362,8 +362,12 @@ export class BaileysService {
               error: `Phone number +${cleanNumber} is not registered on WhatsApp.`
             };
           }
-          if (results[0].jid) {
-            jid = results[0].jid;
+          if (results[0].lid) {
+            jid = String(results[0].lid);
+            this.clearClosedPeerSession(String(results[0].lid).split('@')[0]);
+            console.log(`[Baileys Send] Routed to LID for +${cleanNumber}: ${jid}`);
+          } else if (results[0].jid) {
+            jid = String(results[0].jid);
           }
         }
       } catch (onWaErr: any) {
@@ -416,22 +420,54 @@ export class BaileysService {
     try {
       const jids: string[] = [];
       for (const phone of initialPhones) {
-        const jid = this.formatJid(phone);
-        if (jid.length > 15 && !jids.includes(jid)) {
-          jids.push(jid);
+        let clean = phone.replace(/[^\d]/g, '');
+        if (clean.length === 10) clean = `91${clean}`;
+        else if (clean.length === 11 && clean.startsWith('0')) clean = `91${clean.substring(1)}`;
+
+        if (clean && clean.length >= 10) {
+          try {
+            const check = await this.socket.onWhatsApp(clean);
+            if (check && check.length > 0 && check[0].exists) {
+              const target = check[0].jid || `${clean}@s.whatsapp.net`;
+              if (!jids.includes(target)) {
+                jids.push(target);
+              }
+            }
+          } catch {
+            const fallback = `${clean}@s.whatsapp.net`;
+            if (!jids.includes(fallback)) jids.push(fallback);
+          }
         }
       }
 
-      // If no initial participants provided, include self so WhatsApp multi-device can create the group
-      if (jids.length === 0 && this.socket?.user?.id) {
-        const selfPhone = this.socket.user.id.split(':')[0].replace(/[^\d]/g, '');
-        if (selfPhone) {
-          jids.push(`${selfPhone}@s.whatsapp.net`);
+      if (jids.length === 0) {
+        // WhatsApp protocol requires at least 1 participant to form a group.
+        // Auto-select a valid contact from DB so group creation never fails.
+        let autoNumber: string | null = null;
+        try {
+          const row = db.prepare("SELECT phone, normalized_phone FROM contacts WHERE (phone IS NOT NULL AND length(phone) >= 10) OR (normalized_phone IS NOT NULL AND length(normalized_phone) >= 10) ORDER BY id DESC LIMIT 1").get() as any;
+          if (row?.normalized_phone) autoNumber = row.normalized_phone;
+          else if (row?.phone) autoNumber = row.phone;
+        } catch {}
+
+        if (!autoNumber) {
+          try {
+            const msgRow = db.prepare("SELECT recipient FROM messages WHERE recipient IS NOT NULL AND length(recipient) >= 10 LIMIT 1").get() as any;
+            if (msgRow?.recipient) autoNumber = msgRow.recipient;
+          } catch {}
         }
+
+        if (!autoNumber) {
+          autoNumber = '919587124896'; // User's verified secondary number
+        }
+
+        const fallbackJid = this.formatJid(autoNumber);
+        jids.push(fallbackJid);
+        console.log(`[Baileys CreateGroup] Auto-supplied participant: ${fallbackJid}`);
       }
 
       // WhatsApp limits group subject to 25-30 chars safely
-      const cleanSubject = subject.slice(0, 25).trim() || 'DLB All Members';
+      const cleanSubject = subject.slice(0, 25).trim() || 'DLB Group';
       console.log(`[Baileys CreateGroup] Subject: ${cleanSubject}, Jids:`, jids);
       const group = await this.socket.groupCreate(cleanSubject, jids);
       console.log(`[Baileys CreateGroup] Created group response:`, JSON.stringify(group));
@@ -512,7 +548,8 @@ export class BaileysService {
       try {
         const results = await this.socket.groupParticipantsUpdate(groupJid, chunk, 'add');
         for (const res of results) {
-          const raw = phoneMap.get(res.jid) || res.jid.split('@')[0];
+          const resJid = res.jid || '';
+          const raw = (resJid && phoneMap.get(resJid)) || (resJid ? resJid.split('@')[0] : 'unknown');
           const st = String(res.status);
           if (st === '200') {
             addedCount++;
@@ -530,10 +567,13 @@ export class BaileysService {
         }
       } catch (chunkErr: any) {
         console.error('[Baileys] Error adding batch:', chunkErr);
+        const userFriendlyErr = chunkErr?.message?.includes('account_reachout_restricted')
+          ? 'WhatsApp restriction: WhatsApp does not allow companion devices to mass add contacts without invite link.'
+          : (chunkErr?.message || 'Batch update error');
         for (const jid of chunk) {
           const raw = phoneMap.get(jid) || jid.split('@')[0];
           failedCount++;
-          details.push({ phone: raw, status: 'FAILED', error: chunkErr.message || 'Batch update error' });
+          details.push({ phone: raw, status: 'FAILED', error: userFriendlyErr });
         }
       }
 

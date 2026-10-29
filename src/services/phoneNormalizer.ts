@@ -1,6 +1,8 @@
 export interface PhoneValidationResult {
   isValid: boolean;
   normalized: string;
+  formatted: string;
+  isMobile: boolean;
   countryCode: string;
   reason?: string;
 }
@@ -14,13 +16,13 @@ export function normalizePhoneNumber(
   defaultCountryCode = '91'
 ): PhoneValidationResult {
   if (rawInput === undefined || rawInput === null) {
-    return { isValid: false, normalized: '', countryCode: defaultCountryCode, reason: 'Empty phone number' };
+    return { isValid: false, normalized: '', formatted: '', isMobile: false, countryCode: defaultCountryCode, reason: 'Empty phone number' };
   }
 
   // Convert to string and remove non-digit characters except leading '+'
   let str = String(rawInput).trim();
   if (!str) {
-    return { isValid: false, normalized: '', countryCode: defaultCountryCode, reason: 'Empty phone number' };
+    return { isValid: false, normalized: '', formatted: '', isMobile: false, countryCode: defaultCountryCode, reason: 'Empty phone number' };
   }
 
   // Handle scientific notation e.g. 9.19876E+11 from Excel
@@ -43,34 +45,23 @@ export function normalizePhoneNumber(
     digits = digits.slice(1);
   }
 
-  // If 10 digits and default country is 91 (India)
-  if (digits.length === 10) {
-    // Validate Indian mobile starting digit (6, 7, 8, 9)
-    if (defaultCountryCode === '91') {
-      const firstDigit = digits.charAt(0);
-      if (!['6', '7', '8', '9'].includes(firstDigit)) {
-        return {
-          isValid: false,
-          normalized: defaultCountryCode + digits,
-          countryCode: defaultCountryCode,
-          reason: `Indian mobile numbers must start with 6, 7, 8, or 9 (got '${firstDigit}')`
-        };
-      }
-    }
-    digits = defaultCountryCode + digits;
+  // Strip 0 after 91 (e.g. 9109876543210 -> 919876543210)
+  if (digits.length === 13 && digits.startsWith('910')) {
+    digits = '91' + digits.slice(3);
   }
 
-  // If 12 digits starting with 91 (India with country code)
-  if (digits.length === 12 && digits.startsWith('91')) {
+  let isMobile = false;
+
+  // If 10 digits and default country is 91 (India)
+  if (digits.length === 10) {
+    const firstDigit = digits.charAt(0);
+    isMobile = ['6', '7', '8', '9'].includes(firstDigit);
+    digits = defaultCountryCode + digits;
+  } else if (digits.length === 12 && digits.startsWith('91')) {
     const mobileFirstDigit = digits.charAt(2);
-    if (!['6', '7', '8', '9'].includes(mobileFirstDigit)) {
-      return {
-        isValid: false,
-        normalized: digits,
-        countryCode: '91',
-        reason: `Indian mobile part must start with 6, 7, 8, or 9 (got '${mobileFirstDigit}')`
-      };
-    }
+    isMobile = ['6', '7', '8', '9'].includes(mobileFirstDigit);
+  } else if (digits.length >= 10 && digits.length <= 15) {
+    isMobile = true;
   }
 
   // Global E.164 length validation: between 10 and 15 digits
@@ -78,6 +69,8 @@ export function normalizePhoneNumber(
     return {
       isValid: false,
       normalized: digits,
+      formatted: `+${digits}`,
+      isMobile: false,
       countryCode: defaultCountryCode,
       reason: `Invalid digit length: ${digits.length} digits (expected 10 to 15 digits)`
     };
@@ -98,6 +91,8 @@ export function normalizePhoneNumber(
   return {
     isValid: true,
     normalized: digits,
+    formatted: `+${digits}`,
+    isMobile,
     countryCode
   };
 }

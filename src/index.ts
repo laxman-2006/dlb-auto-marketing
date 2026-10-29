@@ -15,6 +15,8 @@ import conversationRoutes from './routes/conversationRoutes';
 import reportRoutes from './routes/reportRoutes';
 import webhookRoutes from './routes/webhookRoutes';
 import groupRoutes from './routes/groupRoutes';
+import telegramRoutes from './routes/telegramRoutes';
+import { TelegramService } from './services/telegramService';
 
 // Global error handlers to prevent Baileys socket timeouts from killing the Node process
 process.on('unhandledRejection', (reason: any) => {
@@ -64,6 +66,7 @@ app.use('/api/contacts', contactRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/groups', groupRoutes);
+app.use('/api/telegram', telegramRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/webhook', webhookRoutes);
@@ -91,10 +94,11 @@ app.get('/{*splat}', (_req, res) => {
 
 import { BaileysService } from './services/baileysService';
 
-// Initialize database, background queue worker & WhatsApp Web session
+// Initialize database, background queue worker & WhatsApp/Telegram sessions
 initDatabase();
 QueueService.initQueueWorker();
 BaileysService.init();
+TelegramService.init();
 
 app.listen(config.port, () => {
   console.log(`====================================================`);

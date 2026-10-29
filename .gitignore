@@ -5,3 +5,5 @@ frontend/dist/
 .env
 data/
 *.log
+scratch/
+baileys_auth_info/

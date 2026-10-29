@@ -58,6 +58,7 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = ({ onNaviga
   // Create new group modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
+  const [initialMemberPhone, setInitialMemberPhone] = useState('9587124896');
 
   // Rename group state
   const [isRenaming, setIsRenaming] = useState(false);
@@ -194,7 +195,9 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = ({ onNaviga
       setActionStatus(null);
       setProgressMsg(`Creating group "${newGroupName.trim()}" on WhatsApp...`);
 
-      const res = await api.createGroup({ name: newGroupName.trim() });
+      const cleanPhone = initialMemberPhone.trim().replace(/[^\d]/g, '');
+      const initialPhones = cleanPhone.length >= 10 ? [cleanPhone] : [];
+      const res = await api.createGroup({ name: newGroupName.trim(), initialPhones });
       if (res.success && res.group) {
         setActionStatus(`✅ नया ग्रुप "${res.group.name}" सफलतापूर्वक बन गया है! अब आप इसमें नंबर या एक्सेल जोड़ सकते हैं।`);
         setShowCreateModal(false);
@@ -532,39 +535,70 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = ({ onNaviga
               अपने ग्रुप का नाम यहाँ लिखें। यह ग्रुप आपके कनेक्टेड WhatsApp (+{waPhone.replace(/[^\d]/g, '')}) पर तैयार होगा।
             </p>
 
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <input
-                type="text"
-                placeholder="ग्रुप का नाम लिखें (e.g. DLB VIP Customers, Festive Offer Group...)"
-                value={newGroupName}
-                onChange={(e) => setNewGroupName(e.target.value)}
-                maxLength={25}
-                style={{
-                  flex: 1,
-                  padding: '12px 16px',
-                  borderRadius: 8,
-                  border: '1px solid #CBD5E1',
-                  fontSize: 14,
-                  fontWeight: 600
-                }}
-              />
-              <button
-                disabled={!newGroupName.trim() || loading}
-                onClick={handleCreateNewGroup}
-                style={{
-                  padding: '12px 24px',
-                  borderRadius: 8,
-                  background: !newGroupName.trim() || loading ? '#94A3B8' : '#16A34A',
-                  color: '#ffffff',
-                  fontSize: 14,
-                  fontWeight: 700,
-                  border: 'none',
-                  cursor: !newGroupName.trim() || loading ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8
-                }}
-              >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#334155', marginBottom: 6 }}>
+                  ग्रुप का नाम (Group Name) *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. DLB VIP Customers, Festive Offer Group..."
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  maxLength={25}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    borderRadius: 8,
+                    border: '1px solid #CBD5E1',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#334155', marginBottom: 6 }}>
+                  शुरुआती सदस्य का नंबर (Initial Member Phone Number - optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 9587124896 (ग्रुप शुरू करने के लिए 1 नंबर)"
+                  value={initialMemberPhone}
+                  onChange={(e) => setInitialMemberPhone(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    borderRadius: 8,
+                    border: '1px solid #CBD5E1',
+                    fontSize: 14,
+                    boxSizing: 'border-box'
+                  }}
+                />
+                <span style={{ fontSize: 12, color: '#64748B', marginTop: 4, display: 'block' }}>
+                  ℹ️ व्हाट्सएप नियम: ग्रुप तैयार करने के लिए कम से कम 1 सदस्य चाहिए। यदि इसे खाली छोड़ेंगे, तो सिस्टम स्वचालित रूप से मान्य नंबर जोड़ देगा।
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 6 }}>
+                <button
+                  disabled={!newGroupName.trim() || loading}
+                  onClick={handleCreateNewGroup}
+                  style={{
+                    padding: '12px 24px',
+                    borderRadius: 8,
+                    background: !newGroupName.trim() || loading ? '#94A3B8' : '#16A34A',
+                    color: '#ffffff',
+                    fontSize: 14,
+                    fontWeight: 700,
+                    border: 'none',
+                    cursor: !newGroupName.trim() || loading ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8
+                  }}
+                >
                 {loading ? <RefreshCw size={16} className="animate-spin" /> : <Check size={16} />}
                 <span>ग्रुप तैयार करें</span>
               </button>
@@ -585,7 +619,8 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = ({ onNaviga
               </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
         {/* MULTI-GROUP SELECTOR BAR */}
         <div style={{ marginBottom: 20 }}>

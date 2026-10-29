@@ -17,7 +17,8 @@ import {
   Plus,
   Check,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Trash2
 } from 'lucide-react';
 import { WhoGotWhatModal } from './WhoGotWhatModal';
 import { PasteNumbersModal } from './PasteNumbersModal';
@@ -37,6 +38,7 @@ interface PersonalMessagesViewProps {
 
 export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNavigateSettings }) => {
   const [feed, setFeed] = useState<any[]>([]);
+  const [selectedCampId, setSelectedCampId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<any[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [messageText, setMessageText] = useState('');
@@ -180,23 +182,39 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
     setSending(true);
     try {
       const recipientPhones = selectedRecipients.map((r) => r.phone);
-      await api.quickSend({
+      const res = await api.quickSend({
         messageText: messageText.trim() || 'Photo Attachment',
         mediaName: attachedFile ? attachedFile.name : undefined,
         recipientPhones,
         templateId: selectedTemplateId
       });
 
+      if (res && res.id) {
+        setSelectedCampId(res.id);
+      }
+
       setMessageText('');
       setAttachedFile(null);
       setSelectedRecipients([]);
       setShowSearchDrawer(false);
       showToast('success', `Message sent to ${recipientPhones.length} recipient${recipientPhones.length > 1 ? 's' : ''}!`);
-      loadFeed();
+      await loadFeed();
     } catch (err: any) {
       showToast('error', err.message || 'Failed to dispatch message');
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleDeleteBatch = async (id: string) => {
+    if (!window.confirm('क्या आप इस WhatsApp मैसेज सेट/बैच को हटाना चाहते हैं?')) return;
+    try {
+      await api.deleteCampaign(id);
+      showToast('success', 'WhatsApp मैसेज बैच हटाया गया!');
+      if (selectedCampId === id) setSelectedCampId(null);
+      loadFeed();
+    } catch (err: any) {
+      showToast('error', err?.message || 'बैच हटाने में विफल');
     }
   };
 
@@ -218,13 +236,13 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
     setShowTemplateModal(false);
   };
 
-  // Section 5: Real campaign metrics from backend
-  const latestCamp = feed.length > 0 ? feed[0] : null;
-  const totalEligible = latestCamp ? (latestCamp.total_recipients || 1) : 0;
-  const deliveredCount = latestCamp ? (latestCamp.delivered_count || latestCamp.sent_count || 0) : 0;
-  const failedCount = latestCamp ? (latestCamp.failed_count || 0) : 0;
+  // Section 5: Real campaign metrics for selected or latest batch
+  const activeCamp = (selectedCampId ? feed.find((c) => c.id === selectedCampId) : null) || (feed.length > 0 ? feed[0] : null);
+  const totalEligible = activeCamp ? (activeCamp.total_recipients || 1) : 0;
+  const deliveredCount = activeCamp ? (activeCamp.delivered_count || activeCamp.sent_count || 0) : 0;
+  const failedCount = activeCamp ? (activeCamp.failed_count || 0) : 0;
   const pendingCount = Math.max(0, totalEligible - (deliveredCount + failedCount));
-  const readCount = latestCamp?.read_count || 0;
+  const readCount = activeCamp?.read_count || 0;
 
   return (
     <div className="main-conversation-pane">
@@ -296,12 +314,12 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
         </div>
       )}
 
-      {/* SECTION 5: Campaign Progress Display */}
-      {latestCamp && (
+      {/* SECTION 5: Campaign Progress Display for Selected or Latest Batch */}
+      {activeCamp && (
         <CampaignProgressCard
-          campaignId={latestCamp.id}
-          campaignName={latestCamp.name || 'Active Campaign'}
-          status={latestCamp.status_label || latestCamp.status || 'Active'}
+          campaignId={activeCamp.id}
+          campaignName={activeCamp.name || 'Active Campaign'}
+          status={activeCamp.status_label || activeCamp.status || 'Active'}
           totalRecipients={totalEligible}
           delivered={deliveredCount}
           pending={pendingCount}
@@ -341,28 +359,74 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
         </div>
       )}
 
-      {/* Central Campaign Feed */}
+      {/* Central Campaign Feed: Batch Sets (सेट बॉक्सेस) */}
       <div className="campaign-feed">
         {feed.map((card) => {
+          const isSelected = activeCamp?.id === card.id;
           const isDone = card.status === 'COMPLETED' || card.status_label === 'Done';
           const isStopped = card.status === 'STOPPED' || card.status_label === 'Stopped';
           const count = card.total_count || card.total_recipients || 1;
           const msg = card.message_snippet || card.message_text || 'Marketing message';
+          const cardSent = card.sent_count || 0;
+          const cardFailed = card.failed_count || 0;
+          const cardPending = Math.max(0, count - (cardSent + cardFailed));
 
           return (
-            <div key={card.id} className="campaign-bubble-card">
-              <div className="card-message-content">{msg}</div>
-
-              <div className="card-recipient-count">
-                <span className={`status-tag ${isDone ? 'done' : isStopped ? 'stopped' : 'in-progress'}`}>
-                  {card.status_label || card.status}
-                </span>
-                <span style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--dlb-text-primary)' }}>
-                  {count} {count === 1 ? 'person' : 'people'}
-                </span>
+            <div
+              key={card.id}
+              className={`campaign-bubble-card ${isSelected ? 'active-set' : ''}`}
+              onClick={() => setSelectedCampId(card.id)}
+              title="इस WhatsApp सेट का विवरण देखने के लिए क्लिक करें"
+            >
+              <div className="bubble-header-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span className="bubble-campaign-name">{card.name || 'WhatsApp Blast'}</span>
+                  {isSelected && (
+                    <span className="active-set-badge">
+                      <CheckCircle2 size={11} /> चयनित सेट (Active)
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className={`status-tag ${isDone ? 'done' : isStopped ? 'stopped' : 'in-progress'}`}>
+                    {card.status_label || card.status}
+                  </span>
+                  <button
+                    className="batch-delete-btn"
+                    title="यह सेट हटाएं (Delete this batch)"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteBatch(card.id);
+                    }}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               </div>
 
-              <div className="card-summary-line">
+              <div className="card-message-content">{msg}</div>
+
+              {/* Mini Stats Bar for this WhatsApp Batch */}
+              <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap', fontSize: '11.5px', fontWeight: 600 }}>
+                <span style={{ color: '#0369a1', background: '#e0f2fe', padding: '2px 8px', borderRadius: '4px' }}>
+                  कुल: {count}
+                </span>
+                <span style={{ color: '#16a34a', background: '#dcfce7', padding: '2px 8px', borderRadius: '4px' }}>
+                  सफल: {cardSent}
+                </span>
+                {cardFailed > 0 && (
+                  <span style={{ color: '#dc2626', background: '#fee2e2', padding: '2px 8px', borderRadius: '4px' }}>
+                    विफल: {cardFailed}
+                  </span>
+                )}
+                {cardPending > 0 && (
+                  <span style={{ color: '#d97706', background: '#fef3c7', padding: '2px 8px', borderRadius: '4px' }}>
+                    पेंडिंग: {cardPending}
+                  </span>
+                )}
+              </div>
+
+              <div className="card-summary-line" style={{ marginTop: '8px' }}>
                 <span style={{ color: '#4b5563' }}>{card.summary_line}</span>
                 <span className="card-timestamp" style={{ marginLeft: 'auto' }}>
                   {card.created_time}
@@ -370,12 +434,15 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
               </div>
 
               {/* Who Got What button */}
-              <div>
+              <div style={{ marginTop: '6px' }}>
                 <button
                   className="btn-who-got-what"
-                  onClick={() => setActiveWhoGotWhatCampId(card.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveWhoGotWhatCampId(card.id);
+                  }}
                 >
-                  <ChevronDown size={14} /> Who got what
+                  <ChevronDown size={14} /> Who got what (विस्तार से देखें)
                 </button>
               </div>
             </div>
@@ -785,9 +852,11 @@ export const PersonalMessagesView: React.FC<PersonalMessagesViewProps> = ({ onNa
       {/* Upload Excel Modal */}
       {showExcelModal && (
         <UploadExcelModal
+          mode="whatsapp"
           onClose={() => setShowExcelModal(false)}
-          onSuccess={(summary) => {
-            showToast('success', `Excel imported! ${summary.eligibleForMarketing.toLocaleString()} contacts available.`);
+          onSuccess={(res) => {
+            showToast('success', `🚀 WhatsApp Excel Broadcast started for ${res.totalRecipients ? res.totalRecipients.toLocaleString() : 'all'} contacts!`);
+            loadFeed();
           }}
         />
       )}

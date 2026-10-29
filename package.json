@@ -16,7 +16,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.18",
+    "@whiskeysockets/baileys": "^6.7.24",
     "axios": "^1.21.0",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.0.3",
@@ -26,6 +26,7 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.5.0",
     "qrcode": "^1.5.4",
+    "telegram": "^2.26.22",
     "uuid": "^14.0.3",
     "xlsx": "^0.18.5"
   },

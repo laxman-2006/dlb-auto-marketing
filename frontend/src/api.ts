@@ -83,6 +83,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     }),
+  uploadBroadcastWhatsApp: (formData: FormData) =>
+    fetchJson<any>(`${API_BASE}/campaigns/upload-broadcast`, {
+      method: 'POST',
+      body: formData
+    }),
   estimateCampaign: (templateId: string, contactSegment: string) =>
     fetchJson<any>(`${API_BASE}/campaigns/estimate`, {
       method: 'POST',
@@ -98,6 +103,7 @@ export const api = {
   pauseCampaign: (id: string) => fetchJson<any>(`${API_BASE}/campaigns/${id}/pause`, { method: 'POST' }),
   resumeCampaign: (id: string) => fetchJson<any>(`${API_BASE}/campaigns/${id}/resume`, { method: 'POST' }),
   cancelCampaign: (id: string) => fetchJson<any>(`${API_BASE}/campaigns/${id}/cancel`, { method: 'POST' }),
+  deleteCampaign: (id: string) => fetchJson<any>(`${API_BASE}/campaigns/${id}`, { method: 'DELETE' }),
 
   // Conversations APIs
   getConversations: () => fetchJson<any>(`${API_BASE}/conversations`),
@@ -156,5 +162,107 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    })
+    }),
+
+  // Telegram APIs
+  getTelegramStatus: () => fetchJson<any>(`${API_BASE}/telegram/status`),
+  connectTelegramBot: (botToken: string) =>
+    fetchJson<any>(`${API_BASE}/telegram/connect-bot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ botToken })
+    }),
+  sendTelegramPhoneCode: (phone: string) =>
+    fetchJson<any>(`${API_BASE}/telegram/send-phone-code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone })
+    }),
+  verifyTelegramPhoneCode: (code: string, password?: string) =>
+    fetchJson<any>(`${API_BASE}/telegram/verify-phone-code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, password })
+    }),
+  disconnectTelegram: () => fetchJson<any>(`${API_BASE}/telegram/disconnect`, { method: 'POST' }),
+  getTelegramFeed: () => fetchJson<any>(`${API_BASE}/telegram/feed`),
+  getTelegramDialogs: (q: string = '') => fetchJson<any>(`${API_BASE}/telegram/dialogs?q=${encodeURIComponent(q)}`),
+  sendTelegramPersonal: (payload: { recipient: string; messageText: string }) =>
+    fetchJson<any>(`${API_BASE}/telegram/send-personal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }),
+  sendTelegramBulk: (payload: { recipients: string[]; messageText: string }) =>
+    fetchJson<any>(`${API_BASE}/telegram/send-bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }),
+  quickSendTelegram: (formData: FormData) =>
+    fetchJson<any>(`${API_BASE}/telegram/send-bulk`, {
+      method: 'POST',
+      body: formData
+    }),
+  uploadBroadcastTelegram: (formData: FormData) =>
+    fetchJson<any>(`${API_BASE}/telegram/campaigns/upload-broadcast`, {
+      method: 'POST',
+      body: formData
+    }),
+  getTelegramGroups: () => fetchJson<any>(`${API_BASE}/telegram/groups`),
+  createTelegramGroup: (payload: { name: string; initialPhones?: string[] }) =>
+    fetchJson<any>(`${API_BASE}/telegram/groups/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }),
+  renameTelegramGroup: (groupId: string, name: string) =>
+    fetchJson<any>(`${API_BASE}/telegram/groups/${groupId}/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    }),
+  deleteTelegramGroup: (groupId: string) =>
+    fetchJson<any>(`${API_BASE}/telegram/groups/${groupId}`, {
+      method: 'DELETE'
+    }),
+  uploadTelegramGroupExcel: (groupId: string, formData: FormData) =>
+    fetchJson<any>(`${API_BASE}/telegram/groups/${groupId}/upload`, {
+      method: 'POST',
+      body: formData
+    }),
+  addTelegramGroupMembers: (groupId: string, payload: { members?: string[]; rawNumbers?: string }) =>
+    fetchJson<any>(`${API_BASE}/telegram/groups/${groupId}/add-members`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }),
+  getActiveTelegramGroupJob: (groupId: string) =>
+    fetchJson<any>(`${API_BASE}/telegram/groups/${groupId}/jobs/active`),
+  cancelTelegramGroupJob: (groupId: string) =>
+    fetchJson<any>(`${API_BASE}/telegram/groups/${groupId}/jobs/cancel`, { method: 'POST' }),
+  clearTelegramGroupJob: (groupId: string) =>
+    fetchJson<any>(`${API_BASE}/telegram/groups/${groupId}/jobs/clear`, { method: 'POST' }),
+  getTelegramGroupMembers: (groupId: string, status: string = 'ALL', search: string = '', page: number = 1) =>
+    fetchJson<any>(`${API_BASE}/telegram/groups/${groupId}/members?status=${status}&search=${encodeURIComponent(search)}&page=${page}`),
+  broadcastTelegramGroup: (groupId: string, payload: { messageText: string; media?: File }) => {
+    if (payload.media) {
+      const fd = new FormData();
+      fd.append('messageText', payload.messageText);
+      fd.append('media', payload.media);
+      return fetchJson<any>(`${API_BASE}/telegram/groups/${groupId}/broadcast`, {
+        method: 'POST',
+        body: fd
+      });
+    }
+    return fetchJson<any>(`${API_BASE}/telegram/groups/${groupId}/broadcast`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messageText: payload.messageText })
+    });
+  },
+  deleteTelegramCampaign: (id: string) =>
+    fetchJson<any>(`${API_BASE}/telegram/campaigns/${id}`, { method: 'DELETE' }),
+  getTelegramMessages: () => fetchJson<any>(`${API_BASE}/telegram/messages`)
 };
+

@@ -136,9 +136,9 @@ export class QueueService {
         b.system_user_token
       FROM campaign_recipients cr
       JOIN campaigns c ON cr.campaign_id = c.id
-      JOIN message_templates t ON c.template_id = t.id
-      JOIN whatsapp_senders s ON c.sender_id = s.id
-      JOIN business_accounts b ON s.business_account_id = b.id
+      LEFT JOIN message_templates t ON c.template_id = t.id
+      LEFT JOIN whatsapp_senders s ON c.sender_id = s.id
+      LEFT JOIN business_accounts b ON s.business_account_id = b.id
       WHERE cr.status = 'QUEUED'
         AND c.status IN ('QUEUED', 'IN_PROGRESS')
       ORDER BY cr.updated_at ASC

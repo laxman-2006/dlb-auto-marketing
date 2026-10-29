@@ -1,9 +1,28 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
+import multer from 'multer';
+import * as XLSX from 'xlsx';
+import path from 'path';
+import fs from 'fs';
 import { db } from '../db/database';
 import { QueueService } from '../services/queueService';
 import { BaileysService } from '../services/baileysService';
+import { normalizePhoneNumber } from '../services/phoneNormalizer';
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const uploadDir = path.resolve('./data/uploads');
+      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      cb(null, `wa_${Date.now()}_${file.originalname}`);
+    }
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 }
+});
 
 const router = Router();
 
@@ -264,6 +283,115 @@ router.post('/quick-send', (req: Request, res: Response): any => {
   });
 });
 
+// POST /api/campaigns/upload-broadcast - Upload Excel file to broadcast WhatsApp personal messages to all contacts
+router.post('/upload-broadcast', upload.fields([{ name: 'file', maxCount: 1 }, { name: 'media', maxCount: 1 }]), async (req: Request, res: Response): Promise<any> => {
+  const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+  const excelFile = files?.file?.[0];
+  const mediaFile = files?.media?.[0];
+  const messageText = (req.body.messageText || '').trim();
+
+  if (!excelFile) {
+    return res.status(400).json({ error: 'Please upload an Excel or CSV file.' });
+  }
+  if (!messageText) {
+    return res.status(400).json({ error: 'Message text cannot be empty.' });
+  }
+
+  try {
+    const workbook = XLSX.readFile(excelFile.path);
+    const firstSheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[firstSheetName];
+    const rows = XLSX.utils.sheet_to_json<any>(sheet, { header: 1 });
+
+    const seen = new Set<string>();
+    const validRecipients: { id: string; name: string; normalized_phone: string }[] = [];
+
+    for (const row of rows) {
+      if (!Array.isArray(row)) continue;
+      for (const cell of row) {
+        if (!cell) continue;
+        const raw = String(cell).trim();
+        const norm = normalizePhoneNumber(raw, '91');
+        if (norm.isValid && norm.isMobile) {
+          if (!seen.has(norm.normalized)) {
+            seen.add(norm.normalized);
+            validRecipients.push({
+              id: uuidv4(),
+              name: 'Valued Customer',
+              normalized_phone: norm.normalized
+            });
+          }
+        }
+      }
+    }
+
+    if (validRecipients.length === 0) {
+      return res.status(400).json({ error: 'No valid mobile phone numbers found in the uploaded Excel file.' });
+    }
+
+    // Default template and sender
+    const defaultTpl = db.prepare("SELECT id FROM message_templates WHERE status = 'APPROVED' LIMIT 1").get() as any;
+    const sender = db.prepare('SELECT id FROM whatsapp_senders WHERE is_default = 1 LIMIT 1').get() as any;
+    const campId = uuidv4();
+    const campTitle = `Excel Broadcast (${validRecipients.length} contacts) — ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+    db.prepare(`
+      INSERT INTO campaigns (
+        id, name, sender_id, template_id, contact_segment, total_recipients,
+        status, custom_message, media_name, media_url, created_at
+      ) VALUES (?, ?, ?, ?, 'EXCEL_UPLOAD', ?, 'QUEUED', ?, ?, ?, CURRENT_TIMESTAMP)
+    `).run(
+      campId,
+      campTitle,
+      sender?.id || null,
+      defaultTpl?.id || null,
+      validRecipients.length,
+      messageText,
+      mediaFile?.originalname || null,
+      mediaFile?.path || null
+    );
+
+    const insertRecipientStmt = db.prepare(`
+      INSERT INTO campaign_recipients (
+        id, campaign_id, contact_id, phone_number, customer_name,
+        template_parameters_json, status, idempotency_key
+      ) VALUES (?, ?, ?, ?, ?, ?, 'QUEUED', ?)
+    `);
+
+    const tx = db.transaction((items) => {
+      for (const item of items) {
+        const idempotencyKey = crypto
+          .createHash('sha256')
+          .update(`${campId}_${item.normalized_phone}`)
+          .digest('hex');
+
+        insertRecipientStmt.run(
+          uuidv4(),
+          campId,
+          item.id,
+          item.normalized_phone,
+          item.name,
+          JSON.stringify([item.name]),
+          idempotencyKey
+        );
+      }
+    });
+
+    tx(validRecipients);
+
+    return res.json({
+      success: true,
+      campaignId: campId,
+      totalRecipients: validRecipients.length,
+      fileName: excelFile.originalname,
+      message: `Successfully queued personal messages for all ${validRecipients.length.toLocaleString()} contacts!`
+    });
+  } catch (err: any) {
+    console.error('[WhatsApp Excel Broadcast Error]:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to process Excel file' });
+  }
+});
+
 // GET /api/campaigns/:id - Get campaign details & recipients
 router.get('/:id', (req: Request, res: Response): any => {
   const { id } = req.params;
@@ -457,6 +585,19 @@ router.post('/:id/cancel', (req: Request, res: Response) => {
   const id = req.params.id as string;
   const count = QueueService.cancelCampaign(id);
   res.json({ success: true, message: `Campaign cancelled. ${count} pending messages stopped.` });
+});
+
+// DELETE /api/campaigns/:id - Delete a campaign and its recipient history
+router.delete('/:id', (req: Request, res: Response): any => {
+  const id = req.params.id as string;
+  try {
+    db.prepare('DELETE FROM campaign_recipients WHERE campaign_id = ?').run(id);
+    db.prepare('DELETE FROM campaigns WHERE id = ?').run(id);
+    return res.json({ success: true, message: 'Campaign deleted successfully.' });
+  } catch (err: any) {
+    console.error('[CampaignRoutes] Delete error:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to delete campaign.' });
+  }
 });
 
 export default router;

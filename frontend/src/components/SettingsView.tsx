@@ -1,32 +1,63 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
-import { Phone, User, RefreshCw, CheckCircle, Send, LogOut, Loader2 } from 'lucide-react';
+import {
+  Phone,
+  Send,
+  RefreshCw,
+  CheckCircle,
+  LogOut,
+  Loader2,
+  Key,
+  Smartphone,
+  QrCode
+} from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
-  const [status, setStatus] = useState<any | null>(null);
-  const [phoneNum, setPhoneNum] = useState('');
-  const [verifying, setVerifying] = useState(false);
-  const [testSending, setTestSending] = useState(false);
-  const [testRecipient, setTestRecipient] = useState('');
+  const [activeTab, setActiveTab] = useState<'whatsapp' | 'telegram'>('whatsapp');
+
+  // WhatsApp states
+  const [waStatus, setWaStatus] = useState<any | null>(null);
+  const [waVerifying, setWaVerifying] = useState(false);
+  const [waTestSending, setWaTestSending] = useState(false);
+  const [waTestRecipient, setWaTestRecipient] = useState('');
+
+  // Telegram states
+  const [tgStatus, setTgStatus] = useState<any | null>(null);
+  const [tgBotToken, setTgBotToken] = useState('');
+  const [tgConnectingBot, setTgConnectingBot] = useState(false);
+  const [tgPhone, setTgPhone] = useState('');
+  const [tgCode, setTgCode] = useState('');
+  const [tgPassword, setTgPassword] = useState('');
+  const [tgCodeSent, setTgCodeSent] = useState(false);
+  const [tgSendingCode, setTgSendingCode] = useState(false);
+  const [tgVerifyingCode, setTgVerifyingCode] = useState(false);
+  const [tgTestRecipient, setTgTestRecipient] = useState('');
+  const [tgTestSending, setTgTestSending] = useState(false);
+  const [tgModeTab, setTgModeTab] = useState<'qr' | 'bot' | 'phone'>('qr');
+
+  // Feedback Banner
   const [bannerMessage, setBannerMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   const pollTimerRef = useRef<any>(null);
 
   const loadStatus = async () => {
     try {
-      const data = await api.getWhatsAppStatus();
-      setStatus(data);
-      if (data.displayPhoneNumber && data.displayPhoneNumber !== '+91 98765 00000') {
-        setPhoneNum(data.displayPhoneNumber);
-      }
-    } catch (err: any) {
+      const waData = await api.getWhatsAppStatus();
+      setWaStatus(waData);
+    } catch (err) {
       console.error('Failed to load WhatsApp status:', err);
+    }
+
+    try {
+      const tgData = await api.getTelegramStatus();
+      setTgStatus(tgData);
+    } catch (err) {
+      console.error('Failed to load Telegram status:', err);
     }
   };
 
   useEffect(() => {
     loadStatus();
-
     // Auto-poll status every 3 seconds so scanning the QR instantly triggers CONNECTED
     pollTimerRef.current = setInterval(() => {
       loadStatus();
@@ -37,8 +68,9 @@ export const SettingsView: React.FC = () => {
     };
   }, []);
 
-  const handleVerify = async () => {
-    setVerifying(true);
+  // WhatsApp Handlers
+  const handleVerifyWa = async () => {
+    setWaVerifying(true);
     setBannerMessage(null);
     try {
       const result = await api.verifyWhatsApp();
@@ -49,57 +81,224 @@ export const SettingsView: React.FC = () => {
         setBannerMessage({ type: 'info', text: 'Please scan the displayed QR code with WhatsApp on your phone.' });
       }
     } catch (err: any) {
-      setBannerMessage({ type: 'error', text: err.message || 'Verification failed' });
+      setBannerMessage({ type: 'error', text: err.message || 'WhatsApp verification failed' });
     } finally {
-      setVerifying(false);
+      setWaVerifying(false);
     }
   };
 
-  const handleDisconnect = async () => {
+  const handleDisconnectWa = async () => {
     if (!window.confirm('Are you sure you want to disconnect WhatsApp?')) return;
     try {
       await api.disconnectWhatsApp();
       await loadStatus();
-      setPhoneNum('');
       setBannerMessage({ type: 'info', text: 'WhatsApp disconnected. Scan the new QR code to reconnect.' });
     } catch (err: any) {
-      setBannerMessage({ type: 'error', text: err.message || 'Failed to disconnect' });
+      setBannerMessage({ type: 'error', text: err.message || 'Failed to disconnect WhatsApp' });
     }
   };
 
-  const handleSendTestMessage = async (e: React.FormEvent) => {
+  const handleSendTestWa = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!testRecipient) return;
-    setTestSending(true);
+    if (!waTestRecipient) return;
+    setWaTestSending(true);
     setBannerMessage(null);
     try {
-      const res = await api.sendTestMessage(testRecipient);
+      const res = await api.sendTestMessage(waTestRecipient);
       if (res.success) {
-        setBannerMessage({ type: 'success', text: `Test message sent successfully to ${testRecipient}!` });
+        setBannerMessage({ type: 'success', text: `Test message sent successfully to ${waTestRecipient}!` });
       } else {
-        setBannerMessage({ type: 'error', text: res.error || 'Failed to send message' });
+        setBannerMessage({ type: 'error', text: res.error || 'Failed to send WhatsApp message' });
       }
     } catch (err: any) {
       setBannerMessage({ type: 'error', text: err.message || 'Message dispatch failed' });
     } finally {
-      setTestSending(false);
+      setWaTestSending(false);
     }
   };
 
-  const isConnected = status?.connected === true || status?.state === 'CONNECTED';
-  const qrCodeUrl = status?.qrCodeDataUrl;
+  // Telegram Handlers
+  const handleConnectTelegramBot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tgBotToken.trim()) return;
+    setTgConnectingBot(true);
+    setBannerMessage(null);
+    try {
+      const res = await api.connectTelegramBot(tgBotToken.trim());
+      if (res.success) {
+        setBannerMessage({ type: 'success', text: 'Telegram Bot connected successfully!' });
+        await loadStatus();
+        setTgBotToken('');
+      } else {
+        setBannerMessage({ type: 'error', text: res.error || 'Bot connection failed' });
+      }
+    } catch (err: any) {
+      setBannerMessage({ type: 'error', text: err.message || 'Failed to connect Telegram bot' });
+    } finally {
+      setTgConnectingBot(false);
+    }
+  };
+
+  const handleSendTelegramCode = async () => {
+    if (!tgPhone.trim()) return;
+    setTgSendingCode(true);
+    setBannerMessage(null);
+    try {
+      const res = await api.sendTelegramPhoneCode(tgPhone.trim());
+      if (res.success) {
+        setTgCodeSent(true);
+        setBannerMessage({ type: 'info', text: 'Verification code sent to your Telegram app!' });
+      } else {
+        setBannerMessage({ type: 'error', text: res.error || 'Failed to send code' });
+      }
+    } catch (err: any) {
+      setBannerMessage({ type: 'error', text: err.message || 'Error sending code' });
+    } finally {
+      setTgSendingCode(false);
+    }
+  };
+
+  const handleVerifyTelegramCode = async () => {
+    if (!tgCode.trim()) return;
+    setTgVerifyingCode(true);
+    setBannerMessage(null);
+    try {
+      const res = await api.verifyTelegramPhoneCode(tgCode.trim(), tgPassword);
+      if (res.success) {
+        setBannerMessage({ type: 'success', text: 'Telegram logged in successfully!' });
+        await loadStatus();
+        setTgCode('');
+        setTgPassword('');
+        setTgCodeSent(false);
+      } else {
+        setBannerMessage({ type: 'error', text: res.error || 'Invalid code' });
+      }
+    } catch (err: any) {
+      setBannerMessage({ type: 'error', text: err.message || 'Verification error' });
+    } finally {
+      setTgVerifyingCode(false);
+    }
+  };
+
+  const handleDisconnectTelegram = async () => {
+    if (!window.confirm('Are you sure you want to disconnect Telegram?')) return;
+    try {
+      await api.disconnectTelegram();
+      await loadStatus();
+      setBannerMessage({ type: 'info', text: 'Telegram session disconnected.' });
+    } catch (err: any) {
+      setBannerMessage({ type: 'error', text: err.message || 'Failed to disconnect Telegram' });
+    }
+  };
+
+  const handleSendTestTelegram = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tgTestRecipient.trim()) return;
+    setTgTestSending(true);
+    setBannerMessage(null);
+    try {
+      const res = await api.sendTelegramPersonal({
+        recipient: tgTestRecipient.trim(),
+        messageText: 'Hello from DLB AUTO MARKETING! Your Telegram connection is working 100% perfectly.'
+      });
+      if (res.success) {
+        setBannerMessage({ type: 'success', text: `Telegram test message sent to ${tgTestRecipient}!` });
+      } else {
+        setBannerMessage({ type: 'error', text: res.error || 'Failed to send Telegram message' });
+      }
+    } catch (err: any) {
+      setBannerMessage({ type: 'error', text: err.message || 'Telegram test message error' });
+    } finally {
+      setTgTestSending(false);
+    }
+  };
+
+  const isWaConnected = waStatus?.connected === true || waStatus?.state === 'CONNECTED';
+  const isTgConnected = tgStatus?.connected === true || tgStatus?.state === 'CONNECTED';
 
   return (
-    <div className="settings-page-container">
-      <h1 className="settings-heading">Settings</h1>
+    <div className="settings-page-container" style={{ padding: '24px 32px', overflowY: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+        <div>
+          <h1 className="settings-heading" style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: '#0F172A' }}>
+            Account Connections & Settings
+          </h1>
+          <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748B' }}>
+            Connect and manage your WhatsApp and Telegram marketing channels
+          </p>
+        </div>
+
+        {/* Tab Switcher */}
+        <div style={{ display: 'flex', background: '#E2E8F0', padding: '4px', borderRadius: '10px', gap: '4px' }}>
+          <button
+            onClick={() => setActiveTab('whatsapp')}
+            style={{
+              padding: '8px 18px',
+              borderRadius: '8px',
+              border: 'none',
+              background: activeTab === 'whatsapp' ? '#FFFFFF' : 'transparent',
+              color: activeTab === 'whatsapp' ? '#0F172A' : '#64748B',
+              fontWeight: 700,
+              fontSize: '13px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: activeTab === 'whatsapp' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Phone size={16} color={isWaConnected ? '#10B981' : '#64748B'} />
+            WhatsApp Connect
+            <span
+              style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: isWaConnected ? '#10B981' : '#94A3B8'
+              }}
+            />
+          </button>
+
+          <button
+            onClick={() => setActiveTab('telegram')}
+            style={{
+              padding: '8px 18px',
+              borderRadius: '8px',
+              border: 'none',
+              background: activeTab === 'telegram' ? '#FFFFFF' : 'transparent',
+              color: activeTab === 'telegram' ? '#0F172A' : '#64748B',
+              fontWeight: 700,
+              fontSize: '13px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: activeTab === 'telegram' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Send size={16} color={isTgConnected ? '#0088cc' : '#64748B'} />
+            Telegram Connect
+            <span
+              style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: isTgConnected ? '#0088cc' : '#94A3B8'
+              }}
+            />
+          </button>
+        </div>
+      </div>
 
       {/* Inline Feedback Banner */}
       {bannerMessage && (
         <div
           style={{
-            padding: '10px 16px',
+            padding: '12px 18px',
             borderRadius: '8px',
-            marginBottom: '16px',
+            marginBottom: '20px',
             fontSize: '13px',
             display: 'flex',
             alignItems: 'center',
@@ -120,200 +319,552 @@ export const SettingsView: React.FC = () => {
         </div>
       )}
 
-      {/* SECTION 1: MY WHATSAPP (FOR FORWARD) - Exact BizzMonitor match */}
-      <div className="settings-section-title">MY WHATSAPP (FOR FORWARD)</div>
-      <div className="settings-white-card">
-        {/* Header row with Link your WhatsApp */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Phone size={18} color="#111b21" />
-            <span style={{ fontSize: '15px', fontWeight: 600, color: '#111b21' }}>Link your WhatsApp</span>
+      {/* ========================================================================= */}
+      {/* TAB 1: WHATSAPP CONNECT */}
+      {/* ========================================================================= */}
+      {activeTab === 'whatsapp' && (
+        <>
+          <div className="settings-section-title" style={{ fontSize: '13px', fontWeight: 700, color: '#475569', marginBottom: '10px' }}>
+            WHATSAPP MULTI-DEVICE CONNECTION (WEB QR)
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span className={`status-tag ${isConnected ? 'done' : 'stopped'}`}>
-              {isConnected ? 'CONNECTED' : (status?.state || 'NOT_CONNECTED')}
-            </span>
-            <button
-              className="btn-bizz-secondary"
-              style={{ padding: '4px 10px', fontSize: '12px' }}
-              onClick={handleVerify}
-              disabled={verifying}
-            >
-              <RefreshCw size={12} className={verifying ? 'spin' : ''} /> Verify
-            </button>
-            {isConnected && (
-              <button
-                className="btn-bizz-secondary"
-                style={{ padding: '4px 10px', fontSize: '12px', color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '4px' }}
-                onClick={handleDisconnect}
-              >
-                <LogOut size={12} /> Disconnect
-              </button>
-            )}
+
+          <div className="settings-white-card" style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #E2E8F0', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Phone size={18} color="#166534" />
+                </div>
+                <div>
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#111b21' }}>Link Your WhatsApp</div>
+                  <div style={{ fontSize: '12px', color: '#64748B' }}>Scan via WhatsApp → Linked Devices → Link a Device</div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '16px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    background: isWaConnected ? '#DCFCE7' : '#FEE2E2',
+                    color: isWaConnected ? '#166534' : '#991B1B'
+                  }}
+                >
+                  {isWaConnected ? 'CONNECTED' : (waStatus?.state || 'NOT_CONNECTED')}
+                </span>
+                <button
+                  className="btn-bizz-secondary"
+                  style={{ padding: '6px 12px', fontSize: '12px', borderRadius: '6px', cursor: 'pointer' }}
+                  onClick={handleVerifyWa}
+                  disabled={waVerifying}
+                >
+                  <RefreshCw size={12} className={waVerifying ? 'spin' : ''} /> Verify
+                </button>
+                {isWaConnected && (
+                  <button
+                    className="btn-bizz-secondary"
+                    style={{ padding: '6px 12px', fontSize: '12px', color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '4px', borderRadius: '6px', cursor: 'pointer' }}
+                    onClick={handleDisconnectWa}
+                  >
+                    <LogOut size={12} /> Disconnect
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* QR / Status Box */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '16px 0' }}>
+              {isWaConnected ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '36px 24px',
+                    backgroundColor: '#F0FDF4',
+                    borderRadius: '12px',
+                    border: '1px solid #BBF7D0',
+                    width: '100%',
+                    maxWidth: '380px',
+                    textAlign: 'center'
+                  }}
+                >
+                  <CheckCircle size={52} color="#059669" style={{ marginBottom: '12px' }} />
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#166534', marginBottom: '4px' }}>
+                    WhatsApp Connected!
+                  </div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#15803d', marginBottom: '8px' }}>
+                    {waStatus?.displayPhoneNumber || 'Active WhatsApp Account'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#4ADE80' }}>
+                    Ready to send WhatsApp Personal Messages & All Group broadcasts.
+                  </div>
+                </div>
+              ) : waStatus?.qrCodeDataUrl ? (
+                <>
+                  <div
+                    style={{
+                      padding: '14px',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: '12px',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.06)',
+                      marginBottom: '14px'
+                    }}
+                  >
+                    <img
+                      src={waStatus.qrCodeDataUrl}
+                      alt="WhatsApp QR Code"
+                      style={{ width: '240px', height: '240px', display: 'block', borderRadius: '4px' }}
+                    />
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#475569', textAlign: 'center', fontWeight: 600 }}>
+                    1. Open WhatsApp on your phone<br />
+                    2. Go to <strong>Settings → Linked Devices → Link a Device</strong><br />
+                    3. Point your camera at this QR code to connect instantly.
+                  </div>
+                </>
+              ) : (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#64748B' }}>
+                  <Loader2 size={32} className="spin" style={{ margin: '0 auto 12px' }} />
+                  Generating fresh WhatsApp QR code...
+                </div>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Number input field matching Screenshot 2 */}
-        <div style={{ marginBottom: '20px' }}>
-          <input
-            type="text"
-            className="composer-input-pill"
-            style={{ width: '100%', borderRadius: '8px', padding: '10px 14px', border: '1px solid #d1d7db', backgroundColor: '#ffffff' }}
-            placeholder="Your WhatsApp number"
-            value={isConnected ? (status?.displayPhoneNumber || phoneNum) : phoneNum}
-            onChange={(e) => setPhoneNum(e.target.value)}
-            disabled={isConnected}
-          />
-        </div>
-
-        {/* QR Code Section - Dynamic Baileys WhatsApp Web QR */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px 0 20px 0' }}>
-          {isConnected ? (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '40px 24px',
-                backgroundColor: '#f0fdf4',
-                borderRadius: '12px',
-                border: '1px solid #bbf7d0',
-                width: '100%',
-                maxWidth: '340px',
-                textAlign: 'center'
-              }}
-            >
-              <CheckCircle size={56} color="#059669" style={{ marginBottom: '14px' }} />
-              <div style={{ fontSize: '16px', fontWeight: 600, color: '#166534', marginBottom: '6px' }}>
-                WhatsApp Connected!
-              </div>
-              <div style={{ fontSize: '13px', color: '#15803d', marginBottom: '8px' }}>
-                {status?.displayPhoneNumber || 'Active WhatsApp Session'}
-              </div>
-              <div style={{ fontSize: '12px', color: '#65a30d' }}>
-                Ready to send marketing campaigns and personalized messages.
-              </div>
-            </div>
-          ) : qrCodeUrl ? (
-            <>
-              <div
-                style={{
-                  padding: '12px',
-                  backgroundColor: '#ffffff',
-                  border: '1px solid #e5e2da',
-                  borderRadius: '12px',
-                  boxShadow: '0 2px 10px rgba(0,0,0,0.06)',
-                  marginBottom: '14px'
-                }}
-              >
-                <img
-                  src={qrCodeUrl}
-                  alt="WhatsApp QR Code"
-                  style={{ width: '220px', height: '220px', display: 'block', borderRadius: '4px' }}
-                />
-              </div>
-              <div style={{ fontSize: '13px', color: '#54656f', textAlign: 'center', fontWeight: 500 }}>
-                Scan from WhatsApp → Linked devices → Link a device
-              </div>
-            </>
-          ) : (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '50px 20px',
-                color: '#64748b',
-                gap: '12px'
-              }}
-            >
-              <Loader2 size={32} className="spin" color="#008069" />
-              <span style={{ fontSize: '13px' }}>Generating WhatsApp connection QR code...</span>
-            </div>
-          )}
-        </div>
-
-        {/* Test Message Dispatcher (Available when connected) */}
-        {isConnected && (
-          <div style={{ borderTop: '1px solid #e9edef', paddingTop: '16px', marginTop: '10px' }}>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: '#111b21', marginBottom: '8px' }}>
-              Send a Test Message
-            </div>
-            <form onSubmit={handleSendTestMessage} style={{ display: 'flex', gap: '8px' }}>
+          {/* WhatsApp Test Message */}
+          <div className="settings-section-title" style={{ fontSize: '13px', fontWeight: 700, color: '#475569', marginBottom: '10px' }}>
+            WHATSAPP LIVE TEST MESSAGE
+          </div>
+          <div className="settings-white-card" style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+            <form onSubmit={handleSendTestWa} style={{ display: 'flex', gap: '12px' }}>
               <input
                 type="text"
-                className="composer-input-pill"
-                style={{ flex: 1, borderRadius: '6px', padding: '8px 12px', fontSize: '13px' }}
-                placeholder="Recipient number with country code (e.g. +919876543210)"
-                value={testRecipient}
-                onChange={(e) => setTestRecipient(e.target.value)}
+                placeholder="Recipient phone number (e.g. +91 98765 43210)"
+                value={waTestRecipient}
+                onChange={(e) => setWaTestRecipient(e.target.value)}
+                style={{
+                  flex: 1,
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1',
+                  fontSize: '14px',
+                  outline: 'none'
+                }}
               />
               <button
                 type="submit"
-                className="btn-bizz-primary"
-                disabled={testSending || !testRecipient}
-                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', fontSize: '12.5px' }}
+                disabled={waTestSending || !waTestRecipient.trim() || !isWaConnected}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '8px',
+                  background: isWaConnected ? '#10B981' : '#94A3B8',
+                  color: '#fff',
+                  border: 'none',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: isWaConnected && !waTestSending ? 'pointer' : 'not-allowed',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
               >
-                <Send size={13} /> {testSending ? 'Sending...' : 'Send Test'}
+                <Send size={15} />
+                {waTestSending ? 'Sending...' : 'Send WhatsApp Test'}
               </button>
             </form>
           </div>
-        )}
-      </div>
+        </>
+      )}
 
-      {/* SECTION 2: ACCOUNT - Exact BizzMonitor match */}
-      <div className="settings-section-title">ACCOUNT</div>
-      <div className="settings-white-card">
-        {/* User row */}
-        <div className="settings-row-item">
-          <div className="settings-item-avatar">
-            <User size={20} />
+      {/* ========================================================================= */}
+      {/* TAB 2: TELEGRAM CONNECT */}
+      {/* ========================================================================= */}
+      {activeTab === 'telegram' && (
+        <>
+          <div className="settings-section-title" style={{ fontSize: '13px', fontWeight: 700, color: '#475569', marginBottom: '10px' }}>
+            TELEGRAM CLIENT & BOT CONNECTION
           </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '14.5px', fontWeight: 600, color: '#111b21' }}>laxman@srm.com</div>
-            <div style={{ fontSize: '12.5px', color: '#54656f' }}>laxman@srm.com</div>
-          </div>
-        </div>
 
-        {/* Company row */}
-        <div className="settings-row-item">
-          <div className="settings-item-avatar" style={{ padding: 0, overflow: 'hidden', border: 'none', background: 'transparent' }}>
-            <img src="/logo.jpg" alt="DLB AUTO MARKETING Logo" style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', display: 'block', boxShadow: '0 0 0 1px var(--dlb-gold-accent)' }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--dlb-navy-primary)' }}>DLB AUTO MARKETING</div>
-            <div style={{ fontSize: '12.5px', color: 'var(--dlb-text-secondary)' }}>Automotive Marketing & Smart Broadcasting</div>
-          </div>
-        </div>
-      </div>
+          <div className="settings-white-card" style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #E2E8F0', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: '#E0F2FE', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Send size={18} color="#0088cc" />
+                </div>
+                <div>
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#0F172A' }}>Link Your Telegram</div>
+                  <div style={{ fontSize: '12px', color: '#64748B' }}>
+                    {isTgConnected ? `Connected via ${tgStatus?.mode === 'BOT' ? 'Telegram Bot' : 'Telegram Desktop User Link'}` : 'Scan QR code from Telegram or connect Bot Token'}
+                  </div>
+                </div>
+              </div>
 
-      {/* SECTION 3: MESSAGING CONFIGURATION & THROTTLING */}
-      <div className="settings-section-title">MESSAGING & ANTI-BAN PROTOCOLS</div>
-      <div className="settings-white-card">
-        <div className="settings-row-item">
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--dlb-text-primary)' }}>Smart Jitter Delay (Anti-Ban)</div>
-            <div style={{ fontSize: '12.5px', color: 'var(--dlb-text-secondary)' }}>Automatically randomizes inter-message delays between 2.5s – 5.5s to keep account safe.</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '16px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    background: isTgConnected ? '#E0F2FE' : '#FEE2E2',
+                    color: isTgConnected ? '#0369A1' : '#991B1B'
+                  }}
+                >
+                  {isTgConnected ? 'CONNECTED' : (tgStatus?.state || 'NOT_CONNECTED')}
+                </span>
+
+                {isTgConnected && (
+                  <button
+                    className="btn-bizz-secondary"
+                    style={{ padding: '6px 12px', fontSize: '12px', color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '4px', borderRadius: '6px', cursor: 'pointer' }}
+                    onClick={handleDisconnectTelegram}
+                  >
+                    <LogOut size={12} /> Disconnect
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* If Connected */}
+            {isTgConnected ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 0' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '36px 24px',
+                    backgroundColor: '#F0F9FF',
+                    borderRadius: '12px',
+                    border: '1px solid #BAE6FD',
+                    width: '100%',
+                    maxWidth: '400px',
+                    textAlign: 'center'
+                  }}
+                >
+                  <CheckCircle size={52} color="#0284C7" style={{ marginBottom: '12px' }} />
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#0369A1', marginBottom: '4px' }}>
+                    Telegram Connected!
+                  </div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#0284C7', marginBottom: '4px' }}>
+                    {tgStatus?.verifiedName || 'DLB Telegram Session'}
+                  </div>
+                  {tgStatus?.username && (
+                    <div style={{ fontSize: '13px', color: '#0369A1', marginBottom: '8px' }}>
+                      {tgStatus.username}
+                    </div>
+                  )}
+                  <div style={{ fontSize: '12px', color: '#64748B' }}>
+                    Mode: {tgStatus?.mode === 'BOT' ? 'Official Telegram Bot' : 'Telegram Desktop User Account'}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* When Not Connected: Tabs for QR Code or Bot Token */
+              <div>
+                <div style={{ display: 'flex', borderBottom: '1px solid #E2E8F0', marginBottom: '20px', gap: '20px' }}>
+                  <button
+                    onClick={() => setTgModeTab('qr')}
+                    style={{
+                      padding: '10px 4px',
+                      border: 'none',
+                      borderBottom: tgModeTab === 'qr' ? '2px solid #0088cc' : '2px solid transparent',
+                      background: 'none',
+                      fontWeight: 700,
+                      fontSize: '14px',
+                      color: tgModeTab === 'qr' ? '#0088cc' : '#64748B',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <QrCode size={16} /> QR Code Login (Mobile Scan)
+                  </button>
+
+                  <button
+                    onClick={() => setTgModeTab('bot')}
+                    style={{
+                      padding: '10px 4px',
+                      border: 'none',
+                      borderBottom: tgModeTab === 'bot' ? '2px solid #0088cc' : '2px solid transparent',
+                      background: 'none',
+                      fontWeight: 700,
+                      fontSize: '14px',
+                      color: tgModeTab === 'bot' ? '#0088cc' : '#64748B',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Key size={16} /> Bot Token (1-Click)
+                  </button>
+
+                  <button
+                    onClick={() => setTgModeTab('phone')}
+                    style={{
+                      padding: '10px 4px',
+                      border: 'none',
+                      borderBottom: tgModeTab === 'phone' ? '2px solid #0088cc' : '2px solid transparent',
+                      background: 'none',
+                      fontWeight: 700,
+                      fontSize: '14px',
+                      color: tgModeTab === 'phone' ? '#0088cc' : '#64748B',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Smartphone size={16} /> Phone Code Login
+                  </button>
+                </div>
+
+                {/* SubTab 1: QR Code */}
+                {tgModeTab === 'qr' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '12px 0' }}>
+                    {tgStatus?.qrCodeDataUrl ? (
+                      <>
+                        <div
+                          style={{
+                            padding: '14px',
+                            backgroundColor: '#ffffff',
+                            border: '1px solid #BAE6FD',
+                            borderRadius: '12px',
+                            boxShadow: '0 4px 14px rgba(0, 136, 204, 0.1)',
+                            marginBottom: '16px'
+                          }}
+                        >
+                          <img
+                            src={tgStatus.qrCodeDataUrl}
+                            alt="Telegram QR Code"
+                            style={{ width: '240px', height: '240px', display: 'block', borderRadius: '4px' }}
+                          />
+                        </div>
+                        <div style={{ fontSize: '13px', color: '#334155', textAlign: 'center', fontWeight: 600, lineHeight: '1.6' }}>
+                          1. Open Telegram on your phone<br />
+                          2. Go to <strong>Settings → Devices → Link Desktop Device</strong><br />
+                          3. Point your camera at this QR code to log in instantly.
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ padding: '36px', textAlign: 'center', color: '#64748B' }}>
+                        <Loader2 size={32} className="spin" style={{ margin: '0 auto 12px', color: '#0088cc' }} />
+                        Connecting to Telegram gateway and generating QR code...
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* SubTab 2: Bot Token */}
+                {tgModeTab === 'bot' && (
+                  <form onSubmit={handleConnectTelegramBot} style={{ maxWidth: '480px', margin: '0 auto', padding: '16px 0' }}>
+                    <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '6px' }}>
+                      TELEGRAM BOT TOKEN
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+                      value={tgBotToken}
+                      onChange={(e) => setTgBotToken(e.target.value)}
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        border: '1px solid #CBD5E1',
+                        fontSize: '14px',
+                        marginBottom: '12px',
+                        outline: 'none',
+                        fontFamily: 'monospace'
+                      }}
+                    />
+                    <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '16px', lineHeight: '1.4' }}>
+                      Get your free token from <strong>@BotFather</strong> on Telegram in 10 seconds.
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={tgConnectingBot || !tgBotToken.trim()}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        background: '#0088cc',
+                        color: '#fff',
+                        border: 'none',
+                        fontWeight: 700,
+                        fontSize: '14px',
+                        cursor: tgConnectingBot ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px'
+                      }}
+                    >
+                      {tgConnectingBot ? 'Connecting...' : 'Connect Telegram Bot (1-Click)'}
+                    </button>
+                  </form>
+                )}
+
+                {/* SubTab 3: Phone Code Login */}
+                {tgModeTab === 'phone' && (
+                  <div style={{ maxWidth: '440px', margin: '0 auto', padding: '16px 0' }}>
+                    {!tgCodeSent ? (
+                      <div>
+                        <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '6px' }}>
+                          PHONE NUMBER (WITH COUNTRY CODE)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. +91 98765 43210"
+                          value={tgPhone}
+                          onChange={(e) => setTgPhone(e.target.value)}
+                          style={{
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: '12px',
+                            borderRadius: '8px',
+                            border: '1px solid #CBD5E1',
+                            fontSize: '14px',
+                            marginBottom: '14px',
+                            outline: 'none'
+                          }}
+                        />
+                        <button
+                          onClick={handleSendTelegramCode}
+                          disabled={tgSendingCode || !tgPhone.trim()}
+                          style={{
+                            width: '100%',
+                            padding: '12px',
+                            borderRadius: '8px',
+                            background: '#0088cc',
+                            color: '#fff',
+                            border: 'none',
+                            fontWeight: 700,
+                            fontSize: '14px',
+                            cursor: tgSendingCode ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          {tgSendingCode ? 'Sending Code...' : 'Send Verification Code'}
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '6px' }}>
+                          ENTER VERIFICATION CODE
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Enter 5-digit code received on Telegram"
+                          value={tgCode}
+                          onChange={(e) => setTgCode(e.target.value)}
+                          style={{
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: '12px',
+                            borderRadius: '8px',
+                            border: '1px solid #CBD5E1',
+                            fontSize: '14px',
+                            marginBottom: '12px',
+                            outline: 'none',
+                            textAlign: 'center',
+                            letterSpacing: '4px',
+                            fontWeight: 700
+                          }}
+                        />
+                        <label style={{ fontSize: '12px', color: '#64748B', display: 'block', marginBottom: '4px' }}>
+                          Cloud 2FA Password (Only if 2-Step Verification is enabled)
+                        </label>
+                        <input
+                          type="password"
+                          placeholder="Optional 2FA password"
+                          value={tgPassword}
+                          onChange={(e) => setTgPassword(e.target.value)}
+                          style={{
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            border: '1px solid #CBD5E1',
+                            fontSize: '14px',
+                            marginBottom: '16px',
+                            outline: 'none'
+                          }}
+                        />
+                        <button
+                          onClick={handleVerifyTelegramCode}
+                          disabled={tgVerifyingCode || !tgCode.trim()}
+                          style={{
+                            width: '100%',
+                            padding: '12px',
+                            borderRadius: '8px',
+                            background: '#0088cc',
+                            color: '#fff',
+                            border: 'none',
+                            fontWeight: 700,
+                            fontSize: '14px',
+                            cursor: tgVerifyingCode ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          {tgVerifyingCode ? 'Verifying...' : 'Complete Telegram Sign-In'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          <span className="status-tag done">ACTIVE</span>
-        </div>
-        <div className="settings-row-item">
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--dlb-text-primary)' }}>Batch Dispatch Chunk Size</div>
-            <div style={{ fontSize: '12.5px', color: 'var(--dlb-text-secondary)' }}>Processes high-volume Excel broadcasts in safe micro-batches of 25 messages.</div>
+
+          {/* Telegram Test Message */}
+          <div className="settings-section-title" style={{ fontSize: '13px', fontWeight: 700, color: '#475569', marginBottom: '10px' }}>
+            TELEGRAM LIVE TEST MESSAGE
           </div>
-          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--dlb-navy-primary)', background: 'var(--dlb-ice-blue)', padding: '4px 10px', borderRadius: '6px' }}>25 / batch</span>
-        </div>
-        <div className="settings-row-item">
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--dlb-text-primary)' }}>Opt-in & Consent Safeguard</div>
-            <div style={{ fontSize: '12.5px', color: 'var(--dlb-text-secondary)' }}>Enforces verified consent for all campaign recipients.</div>
+          <div className="settings-white-card" style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+            <form onSubmit={handleSendTestTelegram} style={{ display: 'flex', gap: '12px' }}>
+              <input
+                type="text"
+                placeholder="Recipient phone number (e.g. +91 98765 43210) or @username"
+                value={tgTestRecipient}
+                onChange={(e) => setTgTestRecipient(e.target.value)}
+                style={{
+                  flex: 1,
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1',
+                  fontSize: '14px',
+                  outline: 'none'
+                }}
+              />
+              <button
+                type="submit"
+                disabled={tgTestSending || !tgTestRecipient.trim() || !isTgConnected}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '8px',
+                  background: isTgConnected ? '#0088cc' : '#94A3B8',
+                  color: '#fff',
+                  border: 'none',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: isTgConnected && !tgTestSending ? 'pointer' : 'not-allowed',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Send size={15} />
+                {tgTestSending ? 'Sending...' : 'Send Telegram Test'}
+              </button>
+            </form>
           </div>
-          <span className="status-tag done">ENFORCED</span>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 };

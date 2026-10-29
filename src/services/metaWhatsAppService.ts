@@ -100,7 +100,7 @@ export class MetaWhatsAppService {
     } catch (err: any) {
       const metaError = err.response?.data?.error;
       const errorMsg = metaError?.message || err.message || 'Meta API connection failed';
-      let state: MetaConnectionStatus['state'] = 'CONNECTION_ERROR';
+      let state: MetaConnectionStatus['state'] = 'CONFIG_ERROR';
 
       if (metaError?.code === 190 || metaError?.error_subcode === 463) {
         state = 'ACTION_REQUIRED';
