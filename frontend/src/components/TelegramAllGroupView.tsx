@@ -12,7 +12,8 @@ import {
   Sparkles,
   Plus,
   Edit3,
-  Trash2
+  Trash2,
+  ArrowLeft
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -52,9 +53,10 @@ interface ActiveJob {
 
 interface TelegramAllGroupViewProps {
   onNavigateSettings?: () => void;
+  onBack?: () => void;
 }
 
-export const TelegramAllGroupView: React.FC<TelegramAllGroupViewProps> = ({ onNavigateSettings }) => {
+export const TelegramAllGroupView: React.FC<TelegramAllGroupViewProps> = ({ onNavigateSettings, onBack }) => {
   const [groups, setGroups] = useState<TelegramGroupInfo[]>([]);
   const [activeGroup, setActiveGroup] = useState<TelegramGroupInfo | null>(null);
   const [activeTab, setActiveTab] = useState<'excel' | 'paste' | 'messages' | 'members'>('excel');
@@ -377,20 +379,45 @@ export const TelegramAllGroupView: React.FC<TelegramAllGroupViewProps> = ({ onNa
   };
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', background: '#F8FAFC', overflow: 'hidden' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', background: '#F8FAFC', overflow: 'hidden', position: 'relative' }}>
+      <div className="main-watermark-bg" aria-hidden="true" />
       {/* Top Header */}
       <header
         style={{
           background: '#ffffff',
           borderBottom: '1px solid #E2E8F0',
-          padding: '16px 28px',
+          padding: '14px 20px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+          boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+          zIndex: 10,
+          position: 'relative'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {onBack && (
+            <button
+              className="mobile-back-btn"
+              onClick={onBack}
+              title="पीछे जाएं (Back)"
+              style={{
+                background: '#f1f5f9',
+                border: '1px solid #cbd5e1',
+                borderRadius: 8,
+                padding: '6px 10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                cursor: 'pointer',
+                fontWeight: 600,
+                color: '#1e293b'
+              }}
+            >
+              <ArrowLeft size={18} />
+              <span>Back</span>
+            </button>
+          )}
           <div
             style={{
               width: 44,

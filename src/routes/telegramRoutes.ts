@@ -168,21 +168,35 @@ router.post('/send-bulk', upload.single('media'), async (req: Request, res: Resp
         failedCount++;
       }
 
+      if (!resSend.success && resSend.error && (resSend.error.includes('PEER_FLOOD') || resSend.error.includes('FLOOD_WAIT'))) {
+        console.warn(`[Telegram Broadcast ${campaignId}] Anti-Spam Rate Limit reached (${resSend.error}). Pausing to safeguard account.`);
+        db.prepare(`
+          UPDATE telegram_campaigns
+          SET status = 'PAUSED', delivered_count = ?, failed_count = ?, pending_count = ?
+          WHERE id = ?
+        `).run(sentCount, failedCount, Math.max(0, recipients.length - (sentCount + failedCount)), campaignId);
+        break;
+      }
+
       db.prepare(`
         UPDATE telegram_campaigns
         SET delivered_count = ?, failed_count = ?, pending_count = ?
         WHERE id = ?
       `).run(sentCount, failedCount, Math.max(0, recipients.length - (sentCount + failedCount)), campaignId);
 
-      // Safe anti-flood pause (600ms between personal messages)
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      // Safe anti-flood pause (2-4 seconds between personal messages)
+      const delayMs = 2000 + Math.floor(Math.random() * 2000);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
 
-    db.prepare(`
-      UPDATE telegram_campaigns
-      SET status = 'COMPLETED', pending_count = 0
-      WHERE id = ?
-    `).run(campaignId);
+    const currentFinal = db.prepare('SELECT status FROM telegram_campaigns WHERE id = ?').get(campaignId) as any;
+    if (currentFinal?.status === 'RUNNING') {
+      db.prepare(`
+        UPDATE telegram_campaigns
+        SET status = 'COMPLETED', pending_count = 0
+        WHERE id = ?
+      `).run(campaignId);
+    }
   };
 
   if (recipients.length > 20) {
@@ -287,20 +301,35 @@ router.post('/campaigns/upload-broadcast', upload.fields([{ name: 'file', maxCou
         if (resSend.success) sentCount++;
         else failedCount++;
 
+        if (!resSend.success && resSend.error && (resSend.error.includes('PEER_FLOOD') || resSend.error.includes('FLOOD_WAIT'))) {
+          console.warn(`[Telegram Broadcast ${campaignId}] Anti-Spam Rate Limit reached (${resSend.error}). Pausing to safeguard account.`);
+          db.prepare(`
+            UPDATE telegram_campaigns
+            SET status = 'PAUSED', delivered_count = ?, failed_count = ?, pending_count = ?
+            WHERE id = ?
+          `).run(sentCount, failedCount, Math.max(0, recipients.length - (sentCount + failedCount)), campaignId);
+          break;
+        }
+
         db.prepare(`
           UPDATE telegram_campaigns
           SET delivered_count = ?, failed_count = ?, pending_count = ?
           WHERE id = ?
         `).run(sentCount, failedCount, Math.max(0, recipients.length - (sentCount + failedCount)), campaignId);
 
-        await new Promise((resolve) => setTimeout(resolve, 600));
+        // Safe anti-flood pause (2-4 seconds between personal messages)
+        const delayMs = 2000 + Math.floor(Math.random() * 2000);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
 
-      db.prepare(`
-        UPDATE telegram_campaigns
-        SET status = 'COMPLETED', pending_count = 0
-        WHERE id = ?
-      `).run(campaignId);
+      const currentFinal = db.prepare('SELECT status FROM telegram_campaigns WHERE id = ?').get(campaignId) as any;
+      if (currentFinal?.status === 'RUNNING') {
+        db.prepare(`
+          UPDATE telegram_campaigns
+          SET status = 'COMPLETED', pending_count = 0
+          WHERE id = ?
+        `).run(campaignId);
+      }
     })().catch((err) => {
       console.error(`[Telegram Broadcast ${campaignId} Error]:`, err);
       db.prepare('UPDATE telegram_campaigns SET status = "FAILED" WHERE id = ?').run(campaignId);

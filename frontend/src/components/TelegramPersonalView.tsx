@@ -15,7 +15,8 @@ import {
   Check,
   CheckCircle2,
   AlertCircle,
-  Trash2
+  Trash2,
+  ArrowLeft
 } from 'lucide-react';
 import { PasteNumbersModal } from './PasteNumbersModal';
 import { UploadExcelModal } from './UploadExcelModal';
@@ -30,9 +31,10 @@ interface TelegramContactItem {
 
 interface TelegramPersonalViewProps {
   onNavigateSettings?: () => void;
+  onBack?: () => void;
 }
 
-export const TelegramPersonalView: React.FC<TelegramPersonalViewProps> = ({ onNavigateSettings }) => {
+export const TelegramPersonalView: React.FC<TelegramPersonalViewProps> = ({ onNavigateSettings, onBack }) => {
   const [feed, setFeed] = useState<any[]>([]);
   const [selectedCampId, setSelectedCampId] = useState<string | null>(null);
   const [messageText, setMessageText] = useState('');
@@ -243,8 +245,16 @@ export const TelegramPersonalView: React.FC<TelegramPersonalViewProps> = ({ onNa
 
   return (
     <div className="main-conversation-pane">
+      {/* Subtle Background Watermark Logo */}
+      <div className="main-watermark-bg" aria-hidden="true" />
+
       {/* Top Header */}
       <header className="conversation-header">
+        {onBack && (
+          <button className="mobile-back-btn" onClick={onBack} title="Back to Channels">
+            <ArrowLeft size={18} />
+          </button>
+        )}
         <div className="conv-header-avatar" style={{ background: '#0088cc', color: '#ffffff' }}>
           <Send size={20} />
         </div>

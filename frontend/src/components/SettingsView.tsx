@@ -9,10 +9,15 @@ import {
   Loader2,
   Key,
   Smartphone,
-  QrCode
+  QrCode,
+  ArrowLeft
 } from 'lucide-react';
 
-export const SettingsView: React.FC = () => {
+interface SettingsViewProps {
+  onBack?: () => void;
+}
+
+export const SettingsView: React.FC<SettingsViewProps> = ({ onBack }) => {
   const [activeTab, setActiveTab] = useState<'whatsapp' | 'telegram'>('whatsapp');
 
   // WhatsApp states
@@ -217,15 +222,23 @@ export const SettingsView: React.FC = () => {
   const isTgConnected = tgStatus?.connected === true || tgStatus?.state === 'CONNECTED';
 
   return (
-    <div className="settings-page-container" style={{ padding: '24px 32px', overflowY: 'auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-        <div>
-          <h1 className="settings-heading" style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: '#0F172A' }}>
-            Account Connections & Settings
-          </h1>
-          <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748B' }}>
-            Connect and manage your WhatsApp and Telegram marketing channels
-          </p>
+    <div className="settings-page-container" style={{ padding: '24px 32px', overflowY: 'auto', position: 'relative' }}>
+      <div className="main-watermark-bg" aria-hidden="true" />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', position: 'relative', zIndex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {onBack && (
+            <button className="mobile-back-btn" onClick={onBack} title="Back to Channels">
+              <ArrowLeft size={18} />
+            </button>
+          )}
+          <div>
+            <h1 className="settings-heading" style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: '#0F172A' }}>
+              Account Connections & Settings
+            </h1>
+            <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748B' }}>
+              Connect and manage your WhatsApp and Telegram marketing channels
+            </p>
+          </div>
         </div>
 
         {/* Tab Switcher */}

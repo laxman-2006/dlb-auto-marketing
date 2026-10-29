@@ -14,7 +14,8 @@ import {
   Plus,
   Edit3,
   Trash2,
-  X
+  X,
+  ArrowLeft
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -48,9 +49,10 @@ interface GroupMessage {
 
 interface AllMemberGroupViewProps {
   onNavigateSettings?: () => void;
+  onBack?: () => void;
 }
 
-export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = ({ onNavigateSettings }) => {
+export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = ({ onNavigateSettings, onBack }) => {
   const [groups, setGroups] = useState<GroupInfo[]>([]);
   const [activeGroup, setActiveGroup] = useState<GroupInfo | null>(null);
   const [activeTab, setActiveTab] = useState<'excel' | 'paste' | 'messages' | 'members'>('excel');
@@ -340,7 +342,10 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = ({ onNaviga
   };
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', background: '#F8FAFC', overflow: 'hidden' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', background: '#F8FAFC', overflow: 'hidden', position: 'relative' }}>
+      {/* Subtle Background Watermark Logo */}
+      <div className="main-watermark-bg" aria-hidden="true" />
+
       {/* Top Header */}
       <header
         style={{
@@ -354,6 +359,11 @@ export const AllMemberGroupView: React.FC<AllMemberGroupViewProps> = ({ onNaviga
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          {onBack && (
+            <button className="mobile-back-btn" onClick={onBack} title="Back to Channels">
+              <ArrowLeft size={18} />
+            </button>
+          )}
           <div
             style={{
               width: 44,

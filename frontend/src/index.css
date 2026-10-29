@@ -1359,8 +1359,41 @@ body {
 }
 
 /* ==========================================================================
-   9. RESPONSIVE DESIGN (TABLET & MOBILE)
+   9. BRAND WATERMARK & RESPONSIVE DESIGN (TABLET & MOBILE)
    ========================================================================== */
+
+/* Subtle DLB Watermark for Center of Workspace */
+.main-watermark-bg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 320px;
+  height: 320px;
+  background-image: url('/dlb-logo.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: 0.04;
+  pointer-events: none;
+  z-index: 0;
+  filter: grayscale(20%);
+}
+
+.mobile-back-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  color: #172B4D;
+  cursor: pointer;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
 
 @media (max-width: 900px) {
   .campaign-sidebar {
@@ -1375,20 +1408,107 @@ body {
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
+  .bizz-app {
+    flex-direction: column !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    width: 100vw !important;
+    overflow: hidden !important;
+  }
+
+  /* Bottom navigation bar on mobile */
   .left-rail {
-    width: 52px;
-    min-width: 52px;
+    order: 3 !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    height: 56px !important;
+    min-height: 56px !important;
+    flex-direction: row !important;
+    padding: 0 16px !important;
+    border-right: none !important;
+    border-top: 1px solid var(--dlb-border) !important;
+    justify-content: space-around !important;
+    align-items: center !important;
+    z-index: 100 !important;
+    background-color: var(--dlb-navy-primary) !important;
   }
-  .campaign-sidebar {
-    width: 100%;
-    min-width: unset;
+
+  .rail-top {
+    flex-direction: row !important;
+    width: 100% !important;
+    justify-content: space-around !important;
+    align-items: center !important;
+    gap: 0 !important;
   }
-  .metrics-stat-grid {
-    grid-template-columns: 1fr;
+
+  .rail-bottom {
+    display: none !important;
   }
+
+  .rail-btn {
+    width: 48px !important;
+    height: 44px !important;
+    border-radius: 10px !important;
+  }
+
+  .rail-btn.active::before {
+    top: unset !important;
+    bottom: 2px !important;
+    left: 12px !important;
+    right: 12px !important;
+    width: unset !important;
+    height: 3px !important;
+    border-radius: 3px !important;
+  }
+
+  .left-sidebar {
+    width: 100% !important;
+    min-width: 100% !important;
+    height: calc(100vh - 56px) !important;
+    height: calc(100dvh - 56px) !important;
+    border-right: none !important;
+    flex: 1 !important;
+  }
+
+  .main-conversation-pane {
+    width: 100% !important;
+    min-width: 100% !important;
+    height: calc(100vh - 56px) !important;
+    height: calc(100dvh - 56px) !important;
+    flex: 1 !important;
+  }
+
+  .mobile-hide {
+    display: none !important;
+  }
+
+  .mobile-back-btn {
+    display: inline-flex !important;
+  }
+
+  .conversation-header {
+    padding: 10px 12px !important;
+  }
+
+  .conversation-feed-pane {
+    padding: 10px 12px !important;
+  }
+
+  .bottom-composer-bar {
+    padding: 8px 10px !important;
+  }
+
   .attachment-popup-menu {
-    width: 90vw;
-    left: 5vw;
+    width: 92vw !important;
+    left: 4vw !important;
+    bottom: 60px !important;
+  }
+
+  .modal-card {
+    width: 95vw !important;
+    max-width: 95vw !important;
+    padding: 14px !important;
+    max-height: 90vh !important;
   }
 }

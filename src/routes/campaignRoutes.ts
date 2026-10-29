@@ -412,8 +412,11 @@ router.post('/upload-broadcast', upload.fields([{ name: 'file', maxCount: 1 }, {
       return res.status(400).json({ error: 'No valid mobile phone numbers found in the uploaded Excel file.' });
     }
 
-    // Default template and sender
-    const defaultTpl = db.prepare("SELECT id FROM message_templates WHERE status = 'APPROVED' LIMIT 1").get() as any;
+    // Guarantee template and sender exist
+    let defaultTpl = db.prepare("SELECT id FROM message_templates WHERE status = 'APPROVED' LIMIT 1").get() as any;
+    if (!defaultTpl) {
+      defaultTpl = db.prepare("SELECT id FROM message_templates LIMIT 1").get() as any;
+    }
     const sender = db.prepare('SELECT id FROM whatsapp_senders WHERE is_default = 1 LIMIT 1').get() as any;
     const campId = uuidv4();
     const campTitle = `Excel Broadcast (${validRecipients.length} contacts) — ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
@@ -427,7 +430,7 @@ router.post('/upload-broadcast', upload.fields([{ name: 'file', maxCount: 1 }, {
       campId,
       campTitle,
       sender?.id || null,
-      defaultTpl?.id || null,
+      defaultTpl?.id,
       validRecipients.length,
       messageText,
       mediaFile?.originalname || null,
@@ -451,7 +454,7 @@ router.post('/upload-broadcast', upload.fields([{ name: 'file', maxCount: 1 }, {
         insertRecipientStmt.run(
           uuidv4(),
           campId,
-          item.id,
+          null, // contact_id must be null for direct Excel uploads to avoid foreign key errors
           item.normalized_phone,
           item.name,
           JSON.stringify([item.name]),

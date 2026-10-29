@@ -6,7 +6,6 @@ import {
   Bell,
   MessageSquare,
   Users,
-  Download,
   Wifi,
   WifiOff,
   Send
@@ -21,11 +20,12 @@ import { api } from './api';
 
 export const App: React.FC = () => {
   const [showIntro, setShowIntro] = useState(true);
+  const [activePlatform, setActivePlatform] = useState<'whatsapp' | 'telegram' | 'settings'>('whatsapp');
   const [currentView, setCurrentView] = useState<
     'wa-personal' | 'wa-group' | 'tg-personal' | 'tg-group' | 'settings'
   >('wa-personal');
+  const [mobileShowContent, setMobileShowContent] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showBanner, setShowBanner] = useState(true);
   const [waConnected, setWaConnected] = useState(false);
   const [tgConnected, setTgConnected] = useState(false);
 
@@ -51,6 +51,34 @@ export const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const handleSelectPlatform = (platform: 'whatsapp' | 'telegram' | 'settings') => {
+    setActivePlatform(platform);
+    if (platform === 'whatsapp') {
+      if (currentView !== 'wa-personal' && currentView !== 'wa-group') {
+        setCurrentView('wa-personal');
+      }
+      setMobileShowContent(false);
+    } else if (platform === 'telegram') {
+      if (currentView !== 'tg-personal' && currentView !== 'tg-group') {
+        setCurrentView('tg-personal');
+      }
+      setMobileShowContent(false);
+    } else if (platform === 'settings') {
+      setCurrentView('settings');
+      setMobileShowContent(true);
+    }
+  };
+
+  const handleSelectChannel = (view: 'wa-personal' | 'wa-group' | 'tg-personal' | 'tg-group') => {
+    setCurrentView(view);
+    setMobileShowContent(true);
+  };
+
+  const matchesSearch = (text: string) => {
+    if (!searchQuery.trim()) return true;
+    return text.toLowerCase().includes(searchQuery.toLowerCase());
+  };
+
   return (
     <>
       {showIntro && <IntroScreen onComplete={() => setShowIntro(false)} />}
@@ -58,50 +86,36 @@ export const App: React.FC = () => {
         {/* REGION A: Left Narrow Navigation Rail */}
         <nav className="left-rail">
           <div className="rail-top">
-            {/* WhatsApp Personal */}
+            {/* WhatsApp Platform Tab */}
             <button
-              className={`rail-btn ${currentView === 'wa-personal' ? 'active' : ''}`}
-              onClick={() => setCurrentView('wa-personal')}
-              title="WhatsApp Personal Message"
+              className={`rail-btn ${activePlatform === 'whatsapp' ? 'active' : ''}`}
+              onClick={() => handleSelectPlatform('whatsapp')}
+              title="WhatsApp Marketing (व्हाट्सएप)"
+              style={{
+                color: activePlatform === 'whatsapp' ? '#25D366' : undefined
+              }}
             >
-              <MessageSquare size={20} />
+              <MessageSquare size={22} />
             </button>
 
-            {/* WhatsApp Group */}
+            {/* Telegram Platform Tab */}
             <button
-              className={`rail-btn ${currentView === 'wa-group' ? 'active' : ''}`}
-              onClick={() => setCurrentView('wa-group')}
-              title="WhatsApp All Group"
+              className={`rail-btn ${activePlatform === 'telegram' ? 'active' : ''}`}
+              onClick={() => handleSelectPlatform('telegram')}
+              title="Telegram Marketing (टेलीग्राम)"
+              style={{
+                color: activePlatform === 'telegram' ? '#0088cc' : undefined
+              }}
             >
-              <Users size={20} />
-            </button>
-
-            {/* Telegram Personal */}
-            <button
-              className={`rail-btn ${currentView === 'tg-personal' ? 'active' : ''}`}
-              onClick={() => setCurrentView('tg-personal')}
-              title="Telegram Personal Message"
-              style={{ color: currentView === 'tg-personal' ? '#0088cc' : undefined }}
-            >
-              <Send size={20} />
-            </button>
-
-            {/* Telegram Groups */}
-            <button
-              className={`rail-btn ${currentView === 'tg-group' ? 'active' : ''}`}
-              onClick={() => setCurrentView('tg-group')}
-              title="Telegram All Groups"
-              style={{ color: currentView === 'tg-group' ? '#0088cc' : undefined }}
-            >
-              <Users size={20} />
+              <Send size={22} />
             </button>
           </div>
 
           <div className="rail-bottom">
             <button
-              className={`rail-btn ${currentView === 'settings' ? 'active' : ''}`}
-              onClick={() => setCurrentView('settings')}
-              title="Settings (WhatsApp & Telegram Connect)"
+              className={`rail-btn ${activePlatform === 'settings' ? 'active' : ''}`}
+              onClick={() => handleSelectPlatform('settings')}
+              title="Settings (कनेक्शन और सेटिंग्स)"
             >
               <Settings size={22} />
             </button>
@@ -109,7 +123,7 @@ export const App: React.FC = () => {
         </nav>
 
         {/* REGION B: Left Middle Sidebar / Feed List */}
-        <aside className="left-sidebar">
+        <aside className={`left-sidebar ${mobileShowContent ? 'mobile-hide' : ''}`}>
           {/* Brand Header */}
           <div className="sidebar-brand-header">
             <div className="sidebar-brand-left">
@@ -172,7 +186,13 @@ export const App: React.FC = () => {
               <Search size={16} className="search-icon" />
               <input
                 type="text"
-                placeholder="Search marketing channels..."
+                placeholder={
+                  activePlatform === 'whatsapp'
+                    ? 'Search WhatsApp channels...'
+                    : activePlatform === 'telegram'
+                    ? 'Search Telegram channels...'
+                    : 'Search settings...'
+                }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="search-input"
@@ -180,112 +200,150 @@ export const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Home Screen Shortcut Banner */}
-          {showBanner && (
-            <div className="banner-pwa">
-              <div className="banner-text">
-                <Download size={14} color="#204f38" />
-                <span>Add DLB to your home screen</span>
-              </div>
-              <div className="banner-actions">
-                <button
-                  className="btn-banner-add"
-                  onClick={() => alert('DLB AUTO MARKETING shortcut added to desktop.')}
-                >
-                  Add
-                </button>
-                <button className="banner-close-btn" onClick={() => setShowBanner(false)}>
-                  ✕
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Channels & Modes Navigation List */}
+          {/* Channels & Modes Navigation List (Separated by Platform) */}
           <div className="campaign-list-scroll">
-            {/* Section 1 Header */}
-            <div style={{ padding: '8px 12px 4px', fontSize: '11px', fontWeight: 800, color: '#94A3B8', letterSpacing: '0.5px' }}>
-              WHATSAPP MARKETING
-            </div>
+            {/* WHATSAPP CHANNELS ONLY */}
+            {activePlatform === 'whatsapp' && (
+              <>
+                <div style={{ padding: '8px 12px 6px', fontSize: '11px', fontWeight: 800, color: '#16A34A', letterSpacing: '0.6px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e' }} />
+                  WHATSAPP MARKETING
+                </div>
 
-            {/* 1: WhatsApp Personal Message */}
-            <div
-              className={`campaign-nav-item ${currentView === 'wa-personal' ? 'active' : ''}`}
-              onClick={() => setCurrentView('wa-personal')}
-            >
-              <div className="campaign-item-avatar" style={{ background: '#25D366' }}>
-                <MessageSquare size={18} color="#ffffff" />
-              </div>
-              <div className="campaign-item-info">
-                <div className="campaign-item-title">WhatsApp Personal Message</div>
-                <div className="campaign-item-sub">Numbers + one message — each person gets individual copy</div>
-              </div>
-            </div>
+                {/* 1: WhatsApp Personal Message */}
+                {matchesSearch('WhatsApp Personal Message Numbers') && (
+                  <div
+                    className={`campaign-nav-item ${currentView === 'wa-personal' ? 'active' : ''}`}
+                    onClick={() => handleSelectChannel('wa-personal')}
+                  >
+                    <div className="campaign-item-avatar" style={{ background: '#25D366' }}>
+                      <MessageSquare size={18} color="#ffffff" />
+                    </div>
+                    <div className="campaign-item-info">
+                      <div className="campaign-item-title">WhatsApp Personal Message</div>
+                      <div className="campaign-item-sub">Numbers + one message — each person gets individual copy</div>
+                    </div>
+                  </div>
+                )}
 
-            {/* 2: WhatsApp All Group */}
-            <div
-              className={`campaign-nav-item ${currentView === 'wa-group' ? 'active' : ''}`}
-              onClick={() => setCurrentView('wa-group')}
-            >
-              <div className="campaign-item-avatar" style={{ background: '#0284c7' }}>
-                <Users size={18} color="#ffffff" />
-              </div>
-              <div className="campaign-item-info">
-                <div className="campaign-item-title">WhatsApp All Group</div>
-                <div className="campaign-item-sub">One WhatsApp group — auto add from Excel/numbers</div>
-              </div>
-            </div>
+                {/* 2: WhatsApp All Group */}
+                {matchesSearch('WhatsApp All Group auto add numbers') && (
+                  <div
+                    className={`campaign-nav-item ${currentView === 'wa-group' ? 'active' : ''}`}
+                    onClick={() => handleSelectChannel('wa-group')}
+                  >
+                    <div className="campaign-item-avatar" style={{ background: '#0284c7' }}>
+                      <Users size={18} color="#ffffff" />
+                    </div>
+                    <div className="campaign-item-info">
+                      <div className="campaign-item-title">WhatsApp All Group</div>
+                      <div className="campaign-item-sub">One WhatsApp group — auto add from Excel/numbers</div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
 
-            {/* Section 2 Header */}
-            <div style={{ padding: '16px 12px 4px', fontSize: '11px', fontWeight: 800, color: '#94A3B8', letterSpacing: '0.5px' }}>
-              TELEGRAM MARKETING
-            </div>
+            {/* TELEGRAM CHANNELS ONLY */}
+            {activePlatform === 'telegram' && (
+              <>
+                <div style={{ padding: '8px 12px 6px', fontSize: '11px', fontWeight: 800, color: '#0284C7', letterSpacing: '0.6px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#0088cc' }} />
+                  TELEGRAM MARKETING
+                </div>
 
-            {/* 3: Telegram Personal Message */}
-            <div
-              className={`campaign-nav-item ${currentView === 'tg-personal' ? 'active' : ''}`}
-              onClick={() => setCurrentView('tg-personal')}
-            >
-              <div className="campaign-item-avatar" style={{ background: '#0088cc' }}>
-                <Send size={18} color="#ffffff" />
-              </div>
-              <div className="campaign-item-info">
-                <div className="campaign-item-title">Telegram Personal Message</div>
-                <div className="campaign-item-sub">Phone / @Username — individual Telegram copies</div>
-              </div>
-            </div>
+                {/* 3: Telegram Personal Message */}
+                {matchesSearch('Telegram Personal Message Phone username') && (
+                  <div
+                    className={`campaign-nav-item ${currentView === 'tg-personal' ? 'active' : ''}`}
+                    onClick={() => handleSelectChannel('tg-personal')}
+                  >
+                    <div className="campaign-item-avatar" style={{ background: '#0088cc' }}>
+                      <Send size={18} color="#ffffff" />
+                    </div>
+                    <div className="campaign-item-info">
+                      <div className="campaign-item-title">Telegram Personal Message</div>
+                      <div className="campaign-item-sub">Phone / @Username — individual Telegram copies</div>
+                    </div>
+                  </div>
+                )}
 
-            {/* 4: Telegram All Groups */}
-            <div
-              className={`campaign-nav-item ${currentView === 'tg-group' ? 'active' : ''}`}
-              onClick={() => setCurrentView('tg-group')}
-            >
-              <div className="campaign-item-avatar" style={{ background: '#0284C7' }}>
-                <Users size={18} color="#ffffff" />
-              </div>
-              <div className="campaign-item-info">
-                <div className="campaign-item-title">Telegram All Groups</div>
-                <div className="campaign-item-sub">Telegram broadcast group — auto add members & broadcast</div>
-              </div>
-            </div>
+                {/* 4: Telegram All Groups */}
+                {matchesSearch('Telegram All Groups broadcast add members') && (
+                  <div
+                    className={`campaign-nav-item ${currentView === 'tg-group' ? 'active' : ''}`}
+                    onClick={() => handleSelectChannel('tg-group')}
+                  >
+                    <div className="campaign-item-avatar" style={{ background: '#0284C7' }}>
+                      <Users size={18} color="#ffffff" />
+                    </div>
+                    <div className="campaign-item-info">
+                      <div className="campaign-item-title">Telegram All Groups</div>
+                      <div className="campaign-item-sub">Telegram broadcast group — auto add members & broadcast</div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* SETTINGS ONLY */}
+            {activePlatform === 'settings' && (
+              <>
+                <div style={{ padding: '8px 12px 6px', fontSize: '11px', fontWeight: 800, color: '#64748B', letterSpacing: '0.6px' }}>
+                  SETTINGS & CONNECTIONS
+                </div>
+                <div
+                  className={`campaign-nav-item active`}
+                  onClick={() => {
+                    setCurrentView('settings');
+                    setMobileShowContent(true);
+                  }}
+                >
+                  <div className="campaign-item-avatar" style={{ background: '#475569' }}>
+                    <Settings size={18} color="#ffffff" />
+                  </div>
+                  <div className="campaign-item-info">
+                    <div className="campaign-item-title">Account Connections & Settings</div>
+                    <div className="campaign-item-sub">Manage WhatsApp QR, Telegram phone/bot, safe pacing</div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </aside>
 
         {/* REGION C: Main Content Workspace */}
-        <main style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        <main
+          className={`main-content-pane ${!mobileShowContent ? 'mobile-hide' : ''}`}
+          style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}
+        >
           {currentView === 'wa-personal' && (
-            <PersonalMessagesView onNavigateSettings={() => setCurrentView('settings')} />
+            <PersonalMessagesView
+              onNavigateSettings={() => handleSelectPlatform('settings')}
+              onBack={() => setMobileShowContent(false)}
+            />
           )}
           {currentView === 'wa-group' && (
-            <AllMemberGroupView onNavigateSettings={() => setCurrentView('settings')} />
+            <AllMemberGroupView
+              onNavigateSettings={() => handleSelectPlatform('settings')}
+              onBack={() => setMobileShowContent(false)}
+            />
           )}
           {currentView === 'tg-personal' && (
-            <TelegramPersonalView onNavigateSettings={() => setCurrentView('settings')} />
+            <TelegramPersonalView
+              onNavigateSettings={() => handleSelectPlatform('settings')}
+              onBack={() => setMobileShowContent(false)}
+            />
           )}
           {currentView === 'tg-group' && (
-            <TelegramAllGroupView onNavigateSettings={() => setCurrentView('settings')} />
+            <TelegramAllGroupView
+              onNavigateSettings={() => handleSelectPlatform('settings')}
+              onBack={() => setMobileShowContent(false)}
+            />
           )}
-          {currentView === 'settings' && <SettingsView />}
+          {currentView === 'settings' && (
+            <SettingsView onBack={() => setMobileShowContent(false)} />
+          )}
         </main>
       </div>
     </>
