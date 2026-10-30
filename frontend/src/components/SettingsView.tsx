@@ -12,13 +12,14 @@ import {
   QrCode,
   ArrowLeft
 } from 'lucide-react';
+import { YoutubeIcon, InstagramIcon, FacebookIcon } from './SocialIcons';
 
 interface SettingsViewProps {
   onBack?: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ onBack }) => {
-  const [activeTab, setActiveTab] = useState<'whatsapp' | 'telegram'>('whatsapp');
+  const [activeTab, setActiveTab] = useState<'whatsapp' | 'telegram' | 'youtube' | 'instagram' | 'facebook'>('whatsapp');
 
   // WhatsApp states
   const [waStatus, setWaStatus] = useState<any | null>(null);
@@ -40,6 +41,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onBack }) => {
   const [tgTestSending, setTgTestSending] = useState(false);
   const [tgModeTab, setTgModeTab] = useState<'qr' | 'bot' | 'phone'>('qr');
 
+  // Social accounts states (YouTube, Instagram, Facebook)
+  const [socialAccounts, setSocialAccounts] = useState<any>({});
+  const [ytChannelName, setYtChannelName] = useState('DLB Auto Gaming & Motors');
+  const [ytClientId, setYtClientId] = useState('');
+  const [ytClientSecret, setYtClientSecret] = useState('');
+  const [igAccountName, setIgAccountName] = useState('dlb_auto_official');
+  const [igToken, setIgToken] = useState('');
+  const [fbPageName, setFbPageName] = useState('DLB Auto Marketing Official');
+  const [fbPageToken, setFbPageToken] = useState('');
+  const [savingSocial, setSavingSocial] = useState(false);
+
   // Feedback Banner
   const [bannerMessage, setBannerMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
@@ -58,6 +70,46 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onBack }) => {
       setTgStatus(tgData);
     } catch (err) {
       console.error('Failed to load Telegram status:', err);
+    }
+
+    try {
+      const socialData = await api.getSocialAccounts();
+      if (socialData?.success) {
+        setSocialAccounts(socialData.accounts || {});
+      }
+    } catch (err) {
+      console.error('Failed to load social accounts:', err);
+    }
+  };
+
+  const handleSaveSocial = async (platform: 'youtube' | 'instagram' | 'facebook', connectToggle?: boolean) => {
+    try {
+      setSavingSocial(true);
+      const current = socialAccounts[platform] || {};
+      const isConnecting = connectToggle !== undefined ? connectToggle : !current.connected;
+
+      let payload: any = { platform, connected: isConnecting };
+      if (platform === 'youtube') {
+        payload.account_name = ytChannelName;
+        payload.client_id = ytClientId;
+        payload.client_secret = ytClientSecret;
+      } else if (platform === 'instagram') {
+        payload.account_name = igAccountName;
+        payload.access_token = igToken;
+      } else if (platform === 'facebook') {
+        payload.account_name = fbPageName;
+        payload.access_token = fbPageToken;
+      }
+
+      const res = await api.saveSocialAccount(payload);
+      if (res?.success) {
+        setBannerMessage({ type: 'success', text: `✅ ${platform.toUpperCase()} connection updated successfully!` });
+        await loadStatus();
+      }
+    } catch (err: any) {
+      setBannerMessage({ type: 'error', text: err.message || 'Error updating social account' });
+    } finally {
+      setSavingSocial(false);
     }
   };
 
@@ -299,6 +351,96 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onBack }) => {
                 height: '8px',
                 borderRadius: '50%',
                 background: isTgConnected ? '#0088cc' : '#94A3B8'
+              }}
+            />
+          </button>
+
+          <button
+            onClick={() => setActiveTab('youtube')}
+            style={{
+              padding: '8px 14px',
+              borderRadius: '8px',
+              border: 'none',
+              background: activeTab === 'youtube' ? '#FFFFFF' : 'transparent',
+              color: activeTab === 'youtube' ? '#0F172A' : '#64748B',
+              fontWeight: 700,
+              fontSize: '12.5px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: activeTab === 'youtube' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <YoutubeIcon size={15} color={socialAccounts?.youtube?.connected ? '#FF0000' : '#64748B'} />
+            YouTube
+            <span
+              style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: socialAccounts?.youtube?.connected ? '#10B981' : '#94A3B8'
+              }}
+            />
+          </button>
+
+          <button
+            onClick={() => setActiveTab('instagram')}
+            style={{
+              padding: '8px 14px',
+              borderRadius: '8px',
+              border: 'none',
+              background: activeTab === 'instagram' ? '#FFFFFF' : 'transparent',
+              color: activeTab === 'instagram' ? '#0F172A' : '#64748B',
+              fontWeight: 700,
+              fontSize: '12.5px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: activeTab === 'instagram' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <InstagramIcon size={15} color={socialAccounts?.instagram?.connected ? '#E1306C' : '#64748B'} />
+            Instagram
+            <span
+              style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: socialAccounts?.instagram?.connected ? '#10B981' : '#94A3B8'
+              }}
+            />
+          </button>
+
+          <button
+            onClick={() => setActiveTab('facebook')}
+            style={{
+              padding: '8px 14px',
+              borderRadius: '8px',
+              border: 'none',
+              background: activeTab === 'facebook' ? '#FFFFFF' : 'transparent',
+              color: activeTab === 'facebook' ? '#0F172A' : '#64748B',
+              fontWeight: 700,
+              fontSize: '12.5px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: activeTab === 'facebook' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <FacebookIcon size={15} color={socialAccounts?.facebook?.connected ? '#1877F2' : '#64748B'} />
+            Facebook
+            <span
+              style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: socialAccounts?.facebook?.connected ? '#10B981' : '#94A3B8'
               }}
             />
           </button>
@@ -877,6 +1019,319 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onBack }) => {
             </form>
           </div>
         </>
+      )}
+
+      {/* YOUTUBE SETTINGS PANEL */}
+      {activeTab === 'youtube' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="settings-white-card" style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: 44, height: 44, borderRadius: 10, background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <YoutubeIcon size={24} color="#FF0000" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#0F172A' }}>
+                    YouTube Channel Automation (यूट्यूब)
+                  </h3>
+                  <p style={{ margin: '3px 0 0', fontSize: '13px', color: '#64748B' }}>
+                    Daily 2 Automated Dispatches: Morning 07:15 AM & Evening 07:15 PM
+                  </p>
+                </div>
+              </div>
+
+              <span
+                style={{
+                  padding: '4px 12px',
+                  borderRadius: '20px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  background: socialAccounts?.youtube?.connected ? '#DCFCE7' : '#FEE2E2',
+                  color: socialAccounts?.youtube?.connected ? '#15803D' : '#991B1B'
+                }}
+              >
+                {socialAccounts?.youtube?.connected ? '● YouTube Connected' : '○ Not Connected'}
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '6px' }}>
+                  Channel Name (चैनल नाम):
+                </label>
+                <input
+                  type="text"
+                  value={ytChannelName}
+                  onChange={(e) => setYtChannelName(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '6px' }}>
+                  Google Client ID (OAuth):
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 10928374-apps.googleusercontent.com"
+                  value={ytClientId}
+                  onChange={(e) => setYtClientId(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '6px' }}>
+                Google Client Secret / API Key:
+              </label>
+              <input
+                type="password"
+                placeholder="GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxx"
+                value={ytClientSecret}
+                onChange={(e) => setYtClientSecret(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => handleSaveSocial('youtube', true)}
+                disabled={savingSocial}
+                style={{
+                  padding: '10px 22px',
+                  borderRadius: '8px',
+                  background: '#FF0000',
+                  color: '#fff',
+                  border: 'none',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer'
+                }}
+              >
+                {savingSocial ? 'Saving...' : 'Save & Connect YouTube (लॉगिन करें)'}
+              </button>
+
+              {socialAccounts?.youtube?.connected && (
+                <button
+                  onClick={() => handleSaveSocial('youtube', false)}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '8px',
+                    background: '#FEE2E2',
+                    color: '#991B1B',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '13px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Disconnect YouTube
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* INSTAGRAM SETTINGS PANEL */}
+      {activeTab === 'instagram' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="settings-white-card" style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: 44, height: 44, borderRadius: 10, background: '#FCE7F3', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <InstagramIcon size={24} color="#E1306C" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#0F172A' }}>
+                    Instagram Reel Automation (इंस्टाग्राम)
+                  </h3>
+                  <p style={{ margin: '3px 0 0', fontSize: '13px', color: '#64748B' }}>
+                    Daily 2 Automated Reels: Morning 07:15 AM & Evening 07:15 PM
+                  </p>
+                </div>
+              </div>
+
+              <span
+                style={{
+                  padding: '4px 12px',
+                  borderRadius: '20px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  background: socialAccounts?.instagram?.connected ? '#DCFCE7' : '#FEE2E2',
+                  color: socialAccounts?.instagram?.connected ? '#15803D' : '#991B1B'
+                }}
+              >
+                {socialAccounts?.instagram?.connected ? '● Instagram Connected' : '○ Not Connected'}
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '6px' }}>
+                  Instagram Handle / Account Name:
+                </label>
+                <input
+                  type="text"
+                  value={igAccountName}
+                  onChange={(e) => setIgAccountName(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '6px' }}>
+                  Instagram User Access Token (Graph API):
+                </label>
+                <input
+                  type="password"
+                  placeholder="EAABwzLIX4nwBA..."
+                  value={igToken}
+                  onChange={(e) => setIgToken(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => handleSaveSocial('instagram', true)}
+                disabled={savingSocial}
+                style={{
+                  padding: '10px 22px',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, #833AB4 0%, #FD1D1D 50%, #FCB045 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer'
+                }}
+              >
+                {savingSocial ? 'Saving...' : 'Save & Connect Instagram (लॉगिन करें)'}
+              </button>
+
+              {socialAccounts?.instagram?.connected && (
+                <button
+                  onClick={() => handleSaveSocial('instagram', false)}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '8px',
+                    background: '#FEE2E2',
+                    color: '#991B1B',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '13px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Disconnect Instagram
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FACEBOOK SETTINGS PANEL */}
+      {activeTab === 'facebook' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="settings-white-card" style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: 44, height: 44, borderRadius: 10, background: '#E0F2FE', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <FacebookIcon size={24} color="#1877F2" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#0F172A' }}>
+                    Facebook Page Automation (फेसबुक 48 Daily Slots)
+                  </h3>
+                  <p style={{ margin: '3px 0 0', fontSize: '13px', color: '#64748B' }}>
+                    48 Daily Dispatches: 24 Hourly Reels on the hour (:00) + 24 Hourly Posts at :30
+                  </p>
+                </div>
+              </div>
+
+              <span
+                style={{
+                  padding: '4px 12px',
+                  borderRadius: '20px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  background: socialAccounts?.facebook?.connected ? '#DCFCE7' : '#FEE2E2',
+                  color: socialAccounts?.facebook?.connected ? '#15803D' : '#991B1B'
+                }}
+              >
+                {socialAccounts?.facebook?.connected ? '● Facebook Connected' : '○ Not Connected'}
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '6px' }}>
+                  Facebook Page Name:
+                </label>
+                <input
+                  type="text"
+                  value={fbPageName}
+                  onChange={(e) => setFbPageName(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '6px' }}>
+                  Facebook Page Access Token:
+                </label>
+                <input
+                  type="password"
+                  placeholder="EAAGxxxxxxxxxxxxxxxxxxxxxxxx"
+                  value={fbPageToken}
+                  onChange={(e) => setFbPageToken(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => handleSaveSocial('facebook', true)}
+                disabled={savingSocial}
+                style={{
+                  padding: '10px 22px',
+                  borderRadius: '8px',
+                  background: '#1877F2',
+                  color: '#fff',
+                  border: 'none',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer'
+                }}
+              >
+                {savingSocial ? 'Saving...' : 'Save & Connect Facebook (लॉगिन करें)'}
+              </button>
+
+              {socialAccounts?.facebook?.connected && (
+                <button
+                  onClick={() => handleSaveSocial('facebook', false)}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '8px',
+                    background: '#FEE2E2',
+                    color: '#991B1B',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '13px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Disconnect Facebook
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

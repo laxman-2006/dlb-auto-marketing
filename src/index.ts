@@ -16,7 +16,11 @@ import reportRoutes from './routes/reportRoutes';
 import webhookRoutes from './routes/webhookRoutes';
 import groupRoutes from './routes/groupRoutes';
 import telegramRoutes from './routes/telegramRoutes';
+import videoRoutes from './routes/videoRoutes';
+import socialRoutes from './routes/socialRoutes';
 import { TelegramService } from './services/telegramService';
+import { initSocialAndVideoSchema } from './db/socialVideoSchema';
+import { SocialSchedulerService } from './services/socialSchedulerService';
 
 // Global error handlers to prevent Baileys socket timeouts from killing the Node process
 process.on('unhandledRejection', (reason: any) => {
@@ -67,6 +71,8 @@ app.use('/api/templates', templateRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/telegram', telegramRoutes);
+app.use('/api/video', videoRoutes);
+app.use('/api/social', socialRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/webhook', webhookRoutes);
@@ -97,6 +103,8 @@ import { GroupSlowAdder } from './services/groupSlowAdder';
 
 // Initialize database, background queue worker & WhatsApp/Telegram sessions
 initDatabase();
+initSocialAndVideoSchema();
+SocialSchedulerService.startScheduler();
 QueueService.initQueueWorker();
 GroupSlowAdder.init();
 BaileysService.init();

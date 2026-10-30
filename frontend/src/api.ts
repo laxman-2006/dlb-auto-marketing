@@ -265,6 +265,41 @@ export const api = {
   },
   deleteTelegramCampaign: (id: string) =>
     fetchJson<any>(`${API_BASE}/telegram/campaigns/${id}`, { method: 'DELETE' }),
-  getTelegramMessages: () => fetchJson<any>(`${API_BASE}/telegram/messages`)
+  getTelegramMessages: () => fetchJson<any>(`${API_BASE}/telegram/messages`),
+
+  // Social Media Auto-Uploader APIs (YouTube, Instagram, Facebook)
+  getSocialAccounts: () => fetchJson<any>(`${API_BASE}/social/accounts`),
+  saveSocialAccount: (payload: any) =>
+    fetchJson<any>(`${API_BASE}/social/accounts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }),
+  getSocialSlots: (platform: 'youtube' | 'instagram' | 'facebook', date?: string) =>
+    fetchJson<any>(`${API_BASE}/social/slots/${platform}${date ? `?date=${date}` : ''}`),
+  assignSocialSlot: (slotId: string, formData: FormData) =>
+    fetchJson<any>(`${API_BASE}/social/slots/${slotId}/assign`, {
+      method: 'POST',
+      body: formData
+    }),
+  clearSocialSlot: (slotId: string) =>
+    fetchJson<any>(`${API_BASE}/social/slots/${slotId}/clear`, { method: 'POST' }),
+  publishSocialSlotNow: (slotId: string) =>
+    fetchJson<any>(`${API_BASE}/social/slots/${slotId}/publish-now`, { method: 'POST' }),
+
+  // Video Clip Studio APIs (30s 9:16 4K 60FPS)
+  uploadVideoForClips: (formData: FormData) =>
+    fetchJson<any>(`${API_BASE}/video/clip-upload`, {
+      method: 'POST',
+      body: formData
+    }),
+  getVideoJobs: () => fetchJson<any>(`${API_BASE}/video/jobs`),
+  getVideoJob: (jobId: string) => fetchJson<any>(`${API_BASE}/video/jobs/${jobId}`),
+  sendClipToUploader: (payload: { clipId: string; platform: string; slotId?: string }) =>
+    fetchJson<any>(`${API_BASE}/video/send-to-uploader`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
 };
 
