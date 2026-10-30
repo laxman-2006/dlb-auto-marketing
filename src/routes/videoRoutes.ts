@@ -25,11 +25,21 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 2 * 1024 * 1024 * 1024 } // 2GB limit for long gaming videos
+  limits: { fileSize: 50 * 1024 * 1024 * 1024 } // 50GB limit for large multi-hour gaming recordings
 });
 
 // POST /api/video/clip-upload - Upload long video and start 30s 9:16 4K 60FPS slicing
-router.post('/clip-upload', upload.single('video'), async (req: Request, res: Response): Promise<any> => {
+router.post('/clip-upload', (req: Request, res: Response, next: any) => {
+  upload.single('video')(req, res, (err: any) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'फाइल का आकार बहुत बड़ा है (अधिकतम सीमा: 50GB)।' });
+      }
+      return res.status(400).json({ error: `वीडियो अपलोड में त्रुटि: ${err.message}` });
+    }
+    next();
+  });
+}, async (req: Request, res: Response): Promise<any> => {
   try {
     const file = req.file;
     if (!file) {
