@@ -147,7 +147,7 @@ export class VideoClipService {
         const startTime = i * clipDuration;
         const currentDuration = Math.min(clipDuration, Math.max(1, totalDuration - startTime));
         const clipId = uuidv4();
-        const clipFilename = `DLB_Reel_${i + 1}_${Date.now()}.mp4`;
+        const clipFilename = `DLB_Part_${i + 1}_${Date.now()}.mp4`;
         const clipPath = path.join(outputBaseDir, clipFilename);
 
         // FFmpeg command for 9:16 4K 60FPS high resolution

@@ -67,8 +67,39 @@ export const VideoClipStudioView: React.FC<VideoClipStudioViewProps> = ({
 
   // Video Preview Modal
   const [previewClip, setPreviewClip] = useState<ClipRecord | null>(null);
+  const [distributingAll, setDistributingAll] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAutoDistributeAll = async () => {
+    if (!selectedJob) return;
+    if (!selectedJob.completed_clips || selectedJob.completed_clips === 0) {
+      alert('अभी इस वीडियो की कोई क्लिप नहीं बनी है। कृपया क्लिप बनने की प्रतीक्षा करें।');
+      return;
+    }
+
+    const confirmMsg = `क्या आप सभी ${selectedJob.completed_clips} क्लिप्स को Part 1, Part 2, Part 3... के अनुसार:\n- YouTube (2/दिन: सुबह व शाम 7:15)\n- Instagram (2/दिन: सुबह व शाम 7:15)\n- Facebook (24 Reels/दिन)\nमें सीधे ऑटो-शेड्यूल करना चाहते हैं?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      setDistributingAll(true);
+      const res = await api.autoDistributeVideoClips({
+        jobId: selectedJob.id,
+        platforms: ['youtube', 'instagram', 'facebook']
+      });
+
+      if (res?.success) {
+        setActionMsg(`🚀 ${res.message}`);
+      } else {
+        alert(res?.message || 'शेड्यूलिंग विफल रही');
+      }
+    } catch (err: any) {
+      alert(`त्रुटि: ${err.message}`);
+    } finally {
+      setDistributingAll(false);
+      setTimeout(() => setActionMsg(null), 7000);
+    }
+  };
 
   const loadJobs = async () => {
     try {
@@ -474,12 +505,39 @@ export const VideoClipStudioView: React.FC<VideoClipStudioViewProps> = ({
                   </div>
                 </div>
 
-                {selectedJob.status === 'PROCESSING' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(212, 166, 74, 0.15)', padding: '6px 12px', borderRadius: 8, color: '#D4A64A', fontSize: 12, fontWeight: 700 }}>
-                    <RefreshCw size={14} className="spin-icon" />
-                    <span>रील बन रही हैं ({selectedJob.completed_clips}/{selectedJob.total_clips})...</span>
-                  </div>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {selectedJob.completed_clips > 0 && (
+                    <button
+                      onClick={handleAutoDistributeAll}
+                      disabled={distributingAll}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '8px 16px',
+                        borderRadius: 8,
+                        background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
+                        border: 'none',
+                        color: '#FFFFFF',
+                        fontWeight: 800,
+                        fontSize: 12.5,
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 12px rgba(22, 163, 74, 0.4)'
+                      }}
+                      title="सभी क्लिप्स को Part 1, Part 2... के अनुसार YouTube, Instagram व Facebook में भेजें"
+                    >
+                      <Send size={14} />
+                      <span>{distributingAll ? 'शेड्यूल हो रहा है...' : `🚀 सभी ${selectedJob.completed_clips} क्लिप्स ऑटो-शेड्यूल करें (Part 1, Part 2...)`}</span>
+                    </button>
+                  )}
+
+                  {selectedJob.status === 'PROCESSING' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(212, 166, 74, 0.15)', padding: '6px 12px', borderRadius: 8, color: '#D4A64A', fontSize: 12, fontWeight: 700 }}>
+                      <RefreshCw size={14} className="spin-icon" />
+                      <span>रील बन रही हैं ({selectedJob.completed_clips}/{selectedJob.total_clips})...</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Clips Grid */}
@@ -543,13 +601,14 @@ export const VideoClipStudioView: React.FC<VideoClipStudioViewProps> = ({
                             left: 8,
                             fontSize: 10,
                             fontWeight: 800,
-                            padding: '2px 6px',
+                            padding: '2px 8px',
                             borderRadius: 4,
-                            background: 'rgba(0,0,0,0.7)',
-                            color: '#D4A64A'
+                            background: 'rgba(0,0,0,0.75)',
+                            color: '#D4A64A',
+                            border: '1px solid rgba(212, 166, 74, 0.4)'
                           }}
                         >
-                          Reel #{clip.clip_index}
+                          Part {clip.clip_index}
                         </span>
                         <span
                           style={{
@@ -570,8 +629,8 @@ export const VideoClipStudioView: React.FC<VideoClipStudioViewProps> = ({
 
                       {/* Info & Actions */}
                       <div style={{ marginTop: 10 }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: '#FFFFFF' }}>
-                          Reel #{clip.clip_index} ({formatSec(clip.start_time)} - {formatSec(clip.start_time + clip.duration)})
+                        <div style={{ fontSize: 13, fontWeight: 800, color: '#FFFFFF' }}>
+                          Part {clip.clip_index} ({formatSec(clip.start_time)} - {formatSec(clip.start_time + clip.duration)})
                         </div>
                         <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
                           {clip.resolution} • {clip.fps} FPS • {formatBytes(clip.file_size)}

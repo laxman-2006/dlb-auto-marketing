@@ -75,4 +75,17 @@ router.post('/slots/:slotId/publish-now', async (req: Request, res: Response): P
   res.json(result);
 });
 
+// POST /api/social/facebook/bulk-posters - Bulk upload and assign posters for Facebook hourly slots (:30)
+router.post('/facebook/bulk-posters', upload.array('posters', 48), (req: Request, res: Response): any => {
+  const files = (req.files as Express.Multer.File[]) || [];
+  if (files.length === 0) {
+    return res.status(400).json({ error: 'No poster files uploaded.' });
+  }
+
+  const dateStr = (req.body.date as string) || undefined;
+  const fileData = files.map((f) => ({ path: f.path, name: f.originalname }));
+  const result = SocialSchedulerService.bulkAssignFacebookPosters(fileData, dateStr);
+  return res.json(result);
+});
+
 export default router;

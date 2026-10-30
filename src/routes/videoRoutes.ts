@@ -145,4 +145,18 @@ router.post('/send-to-uploader', (req: Request, res: Response): any => {
   return res.json({ success: false, message: 'All slots for today and tomorrow are already filled.' });
 });
 
+// POST /api/video/auto-distribute - Bulk auto-assign all sliced clips to YouTube, Instagram & Facebook
+router.post('/auto-distribute', (req: Request, res: Response): any => {
+  const { jobId, platforms } = req.body;
+  if (!jobId) {
+    return res.status(400).json({ error: 'jobId is required' });
+  }
+
+  const result = SocialSchedulerService.autoDistributeJobClips(
+    String(jobId),
+    Array.isArray(platforms) ? platforms : ['youtube', 'instagram', 'facebook']
+  );
+  return res.json(result);
+});
+
 export default router;

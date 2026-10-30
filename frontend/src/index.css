@@ -1362,22 +1362,25 @@ body {
    9. BRAND WATERMARK & RESPONSIVE DESIGN (TABLET & MOBILE)
    ========================================================================== */
 
-/* Subtle DLB Watermark for Center of Workspace */
+/* Subtle DLB Watermark for Center of Workspace - Fixed Position & Ball/Circular Shape */
 .main-watermark-bg {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 320px;
-  height: 320px;
-  background-image: url('/dlb-logo.png');
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-  opacity: 0.04;
-  pointer-events: none;
-  z-index: 0;
-  filter: grayscale(20%);
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  width: 320px !important;
+  height: 320px !important;
+  border-radius: 50% !important;
+  clip-path: circle(50% at 50% 50%) !important;
+  overflow: hidden !important;
+  background-image: url('/dlb-logo.png') !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  opacity: 0.045 !important;
+  pointer-events: none !important;
+  z-index: 0 !important;
+  filter: grayscale(15%) !important;
 }
 
 .mobile-back-btn {

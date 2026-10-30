@@ -37,22 +37,27 @@ export class SocialSchedulerService {
   /**
    * Initialize slots for today and tomorrow if not already created
    */
+  /**
+   * Initialize slots for today and upcoming days
+   */
   public static ensureDailySlots(): void {
-    const todayStr = new Date().toISOString().split('T')[0];
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    this.ensureFutureSlots(14);
+  }
 
-    const days = [todayStr, tomorrowStr];
+  public static ensureFutureSlots(daysAhead: number = 14): void {
+    const now = new Date();
+    for (let dayOffset = 0; dayOffset < daysAhead; dayOffset++) {
+      const d = new Date(now);
+      d.setDate(now.getDate() + dayOffset);
+      const dStr = d.toISOString().split('T')[0];
 
-    for (const d of days) {
       // 1. YouTube: 2 Daily Slots (07:15 AM & 07:15 PM)
-      this.ensureSlot('youtube', 'VIDEO', `${d} Morning YouTube (सुबह 07:15 AM)`, d, '07:15');
-      this.ensureSlot('youtube', 'VIDEO', `${d} Evening YouTube (शाम 07:15 PM)`, d, '19:15');
+      this.ensureSlot('youtube', 'VIDEO', `${dStr} Morning YouTube (सुबह 07:15 AM)`, dStr, '07:15');
+      this.ensureSlot('youtube', 'VIDEO', `${dStr} Evening YouTube (शाम 07:15 PM)`, dStr, '19:15');
 
       // 2. Instagram: 2 Daily Slots (07:15 AM & 07:15 PM)
-      this.ensureSlot('instagram', 'REEL', `${d} Morning Insta Reel (सुबह 07:15 AM)`, d, '07:15');
-      this.ensureSlot('instagram', 'REEL', `${d} Evening Insta Reel (शाम 07:15 PM)`, d, '19:15');
+      this.ensureSlot('instagram', 'REEL', `${dStr} Morning Insta Reel (सुबह 07:15 AM)`, dStr, '07:15');
+      this.ensureSlot('instagram', 'REEL', `${dStr} Evening Insta Reel (शाम 07:15 PM)`, dStr, '19:15');
 
       // 3. Facebook: 48 Daily Slots (24 Hourly Reels on the hour + 24 Hourly Posts at :30)
       for (let hour = 0; hour < 24; hour++) {
@@ -61,9 +66,9 @@ export class SocialSchedulerService {
         const halfLabel = (hour === 0 ? '12:30 AM' : (hour < 12 ? `${hour}:30 AM` : (hour === 12 ? '12:30 PM' : `${hour - 12}:30 PM`)));
 
         // Reel on the hour (:00)
-        this.ensureSlot('facebook', 'REEL', `${d} FB Reel #${hour + 1} (${hourLabel})`, d, `${hh}:00`);
+        this.ensureSlot('facebook', 'REEL', `${dStr} FB Reel #${hour + 1} (${hourLabel})`, dStr, `${hh}:00`);
         // Photo / Poster at half-past (:30)
-        this.ensureSlot('facebook', 'PHOTO', `${d} FB Post #${hour + 1} (${halfLabel})`, d, `${hh}:30`);
+        this.ensureSlot('facebook', 'PHOTO', `${dStr} FB Post #${hour + 1} (${halfLabel})`, dStr, `${hh}:30`);
       }
     }
   }
@@ -87,6 +92,138 @@ export class SocialSchedulerService {
         ) VALUES (?, ?, ?, ?, ?, ?, '', '', 'SCHEDULED')
       `).run(uuidv4(), platform, contentType, slotLabel, scheduledDate, scheduledTime);
     }
+  }
+
+  /**
+   * Auto-distribute sliced video clips sequentially into YouTube, Instagram, and Facebook slots
+   * with Part 1, Part 2, Part 3 ... Part N naming convention
+   */
+  public static autoDistributeJobClips(
+    jobId: string,
+    platforms: ('youtube' | 'instagram' | 'facebook')[] = ['youtube', 'instagram', 'facebook']
+  ): { success: boolean; distributedCount: number; message: string } {
+    const clips = db.prepare(`
+      SELECT * FROM video_clips WHERE job_id = ? ORDER BY clip_index ASC
+    `).all(jobId) as any[];
+
+    if (!clips || clips.length === 0) {
+      return { success: false, distributedCount: 0, message: 'इस जॉब में कोई क्लिप नहीं मिली।' };
+    }
+
+    const totalClips = clips.length;
+    const daysNeeded = Math.min(90, Math.max(14, Math.ceil(totalClips / 2) + 3));
+    this.ensureFutureSlots(daysNeeded);
+
+    let totalAssigned = 0;
+
+    for (const platform of platforms) {
+      if (platform === 'youtube' || platform === 'instagram') {
+        const slots = db.prepare(`
+          SELECT * FROM social_schedules
+          WHERE platform = ? AND content_type = ? AND status = 'SCHEDULED'
+          ORDER BY scheduled_date ASC, scheduled_time ASC
+        `).all(platform, platform === 'youtube' ? 'VIDEO' : 'REEL') as ScheduleSlot[];
+
+        let clipIdx = 0;
+        for (const slot of slots) {
+          if (clipIdx >= clips.length) break;
+          if (slot.media_path) continue; // Keep existing if already filled
+
+          const clip = clips[clipIdx];
+          const partNum = clip.clip_index;
+          const nextPart = partNum + 1;
+          const isYt = platform === 'youtube';
+
+          const title = isYt
+            ? `DLB Gaming Exclusive - Part ${partNum}`
+            : `DLB Auto Viral Reel - Part ${partNum}`;
+
+          const caption = isYt
+            ? `🔥 Part ${partNum} out now! Subscribe for Part ${nextPart} coming soon! #gaming #dlb #shorts #part${partNum}`
+            : `🔥 Watch Part ${partNum}! Part ${nextPart} releasing next. Follow DLB Auto! #reels #viral #gaming #part${partNum}`;
+
+          this.updateSlot(slot.id, {
+            title,
+            caption,
+            mediaPath: clip.clip_path,
+            mediaName: clip.clip_filename
+          });
+
+          clipIdx++;
+          totalAssigned++;
+        }
+      } else if (platform === 'facebook') {
+        const fbSlots = db.prepare(`
+          SELECT * FROM social_schedules
+          WHERE platform = 'facebook' AND content_type = 'REEL' AND status = 'SCHEDULED'
+          ORDER BY scheduled_date ASC, scheduled_time ASC
+        `).all() as ScheduleSlot[];
+
+        let clipIdx = 0;
+        for (const slot of fbSlots) {
+          if (clipIdx >= clips.length) break;
+          if (slot.media_path) continue;
+
+          const clip = clips[clipIdx];
+          const partNum = clip.clip_index;
+          const nextPart = partNum + 1;
+
+          this.updateSlot(slot.id, {
+            title: `DLB Action Reel - Part ${partNum}`,
+            caption: `🔥 Part ${partNum} | Follow DLB Auto Marketing for Part ${nextPart}! #facebookreels #dlb #gaming #part${partNum}`,
+            mediaPath: clip.clip_path,
+            mediaName: clip.clip_filename
+          });
+
+          clipIdx++;
+          totalAssigned++;
+        }
+      }
+    }
+
+    return {
+      success: true,
+      distributedCount: totalAssigned,
+      message: `सफलतापूर्वक सभी ${totalClips} क्लिप्स को Part 1, Part 2... के अनुसार YouTube, Instagram और Facebook में ऑटो-शेड्यूल कर दिया गया!`
+    };
+  }
+
+  /**
+   * Bulk assign Facebook posters to the 24 hourly post slots (:30)
+   */
+  public static bulkAssignFacebookPosters(
+    files: { path: string; name: string }[],
+    dateStr?: string
+  ): { success: boolean; count: number; message: string } {
+    const targetDate = dateStr || new Date().toISOString().split('T')[0];
+    this.ensureFutureSlots(7);
+
+    const postSlots = db.prepare(`
+      SELECT * FROM social_schedules
+      WHERE platform = 'facebook' AND content_type = 'PHOTO' AND scheduled_date = ?
+      ORDER BY scheduled_time ASC
+    `).all(targetDate) as ScheduleSlot[];
+
+    let assigned = 0;
+    for (let i = 0; i < files.length && i < postSlots.length; i++) {
+      const slot = postSlots[i];
+      const file = files[i];
+      const hourNum = i + 1;
+
+      this.updateSlot(slot.id, {
+        title: `DLB Auto Daily Poster #${hourNum}`,
+        caption: `🚀 DLB Auto Marketing Daily Poster Update #${hourNum} | संपर्क करें और व्यापार को आगे बढ़ाएं! #marketing #dlb #business`,
+        mediaPath: file.path,
+        mediaName: file.name
+      });
+      assigned++;
+    }
+
+    return {
+      success: true,
+      count: assigned,
+      message: `सफलतापूर्वक ${assigned} पोस्टर Facebook के 24 hourly फोटो स्लॉट्स में शेड्यूल कर दिए गए!`
+    };
   }
 
   /**

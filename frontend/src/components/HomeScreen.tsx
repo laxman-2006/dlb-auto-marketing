@@ -20,9 +20,7 @@ interface HomeScreenProps {
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
-  onSelectHub,
-  waConnected = false,
-  tgConnected = false
+  onSelectHub
 }) => {
   return (
     <div className="home-dashboard-container">
@@ -52,14 +50,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </div>
 
         <div className="home-top-actions">
-          <div className="home-live-pills">
-            <span className={`status-pill ${waConnected ? 'online' : 'offline'}`} title="WhatsApp Status">
-              WA {waConnected ? '● Online' : '○ Offline'}
-            </span>
-            <span className={`status-pill ${tgConnected ? 'online' : 'offline'}`} title="Telegram Status">
-              TG {tgConnected ? '● Online' : '○ Offline'}
-            </span>
-          </div>
           <button
             className="home-settings-btn"
             onClick={() => onSelectHub('settings')}

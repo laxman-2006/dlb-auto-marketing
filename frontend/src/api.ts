@@ -286,6 +286,11 @@ export const api = {
     fetchJson<any>(`${API_BASE}/social/slots/${slotId}/clear`, { method: 'POST' }),
   publishSocialSlotNow: (slotId: string) =>
     fetchJson<any>(`${API_BASE}/social/slots/${slotId}/publish-now`, { method: 'POST' }),
+  bulkUploadFacebookPosters: (formData: FormData) =>
+    fetchJson<any>(`${API_BASE}/social/facebook/bulk-posters`, {
+      method: 'POST',
+      body: formData
+    }),
 
   // Video Clip Studio APIs (30s 9:16 4K 60FPS)
   uploadVideoForClips: (formData: FormData) =>
@@ -297,6 +302,12 @@ export const api = {
   getVideoJob: (jobId: string) => fetchJson<any>(`${API_BASE}/video/jobs/${jobId}`),
   sendClipToUploader: (payload: { clipId: string; platform: string; slotId?: string }) =>
     fetchJson<any>(`${API_BASE}/video/send-to-uploader`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }),
+  autoDistributeVideoClips: (payload: { jobId: string; platforms?: string[] }) =>
+    fetchJson<any>(`${API_BASE}/video/auto-distribute`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)

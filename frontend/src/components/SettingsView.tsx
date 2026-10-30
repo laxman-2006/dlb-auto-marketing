@@ -277,10 +277,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onBack }) => {
     <div className="settings-page-container" style={{ padding: '24px 32px', overflowY: 'auto', position: 'relative' }}>
       <div className="main-watermark-bg" aria-hidden="true" />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', position: 'relative', zIndex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           {onBack && (
-            <button className="mobile-back-btn" onClick={onBack} title="Back to Channels">
-              <ArrowLeft size={18} />
+            <button
+              onClick={onBack}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '9px 16px',
+                borderRadius: '9px',
+                background: '#0F172A',
+                color: '#FFFFFF',
+                border: 'none',
+                fontWeight: 700,
+                fontSize: '13px',
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(15, 23, 42, 0.25)',
+                transition: 'all 0.15s ease',
+                flexShrink: 0
+              }}
+              title="होम पेज पर वापस जाएं (Back to Home)"
+            >
+              <ArrowLeft size={17} />
+              <span>← होम पेज (Home)</span>
             </button>
           )}
           <div>
@@ -288,7 +308,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onBack }) => {
               Account Connections & Settings
             </h1>
             <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748B' }}>
-              Connect and manage your WhatsApp and Telegram marketing channels
+              Connect and manage your WhatsApp, Telegram, YouTube, Instagram & Facebook marketing channels
             </p>
           </div>
         </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Clock,
   ArrowLeft,
@@ -7,7 +7,9 @@ import {
   RefreshCw,
   Trash2,
   Send,
-  Settings
+  Settings,
+  AlertCircle,
+  Calendar
 } from 'lucide-react';
 import { YoutubeIcon, InstagramIcon, FacebookIcon } from './SocialIcons';
 import { api } from '../api';
@@ -50,8 +52,19 @@ export const AutoVideoUploaderView: React.FC<AutoVideoUploaderViewProps> = ({
   const [modalFile, setModalFile] = useState<File | null>(null);
   const [savingSlot, setSavingSlot] = useState(false);
 
+  // Date Filter & Bulk Actions
+  const [selectedDate, setSelectedDate] = useState<string>('TODAY');
+  const [autoDistributing, setAutoDistributing] = useState(false);
+  const [bulkUploadingPosters, setBulkUploadingPosters] = useState(false);
+  const bulkPosterInputRef = useRef<HTMLInputElement>(null);
+
   // Filter tabs for Facebook: ALL | REELS (24) | POSTS (24)
   const [fbFilter, setFbFilter] = useState<'ALL' | 'REEL' | 'PHOTO'>('ALL');
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const tomorrowObj = new Date();
+  tomorrowObj.setDate(tomorrowObj.getDate() + 1);
+  const tomorrowStr = tomorrowObj.toISOString().split('T')[0];
 
   const loadAccounts = async () => {
     try {
@@ -137,15 +150,107 @@ export const AutoVideoUploaderView: React.FC<AutoVideoUploaderViewProps> = ({
     }
   };
 
+  const handleAutoDistributeFromStudio = async () => {
+    try {
+      setAutoDistributing(true);
+      const jobsRes = await api.getVideoJobs();
+      if (!jobsRes?.success || !jobsRes.jobs || jobsRes.jobs.length === 0) {
+        alert('क्लिप स्टूडियो में कोई प्रोसेस किया गया वीडियो नहीं मिला। पहले वीडियो क्लिप स्टूडियो में वीडियो डालें।');
+        return;
+      }
+
+      const jobWithClips = jobsRes.jobs.find((j: any) => j.completed_clips > 0) || jobsRes.jobs[0];
+      if (!jobWithClips || jobWithClips.completed_clips === 0) {
+        alert('क्लिप स्टूडियो में अभी रील तैयार हो रही हैं। कृपया थोड़ा इंतजार करें।');
+        return;
+      }
+
+      const res = await api.autoDistributeVideoClips({
+        jobId: jobWithClips.id,
+        platforms: ['youtube', 'instagram', 'facebook']
+      });
+
+      if (res?.success) {
+        setActionMsg(`🚀 ${res.message}`);
+        await loadSlots();
+      } else {
+        alert(res?.message || 'ऑटो-शेड्यूलिंग विफल रही');
+      }
+    } catch (err: any) {
+      alert(`त्रुटि: ${err.message}`);
+    } finally {
+      setAutoDistributing(false);
+      setTimeout(() => setActionMsg(null), 7000);
+    }
+  };
+
+  const handleBulkUploadPosters = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    try {
+      setBulkUploadingPosters(true);
+      const fd = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        fd.append('posters', files[i]);
+      }
+      const targetDate = selectedDate === 'TODAY' || selectedDate === 'ALL' ? todayStr : selectedDate === 'TOMORROW' ? tomorrowStr : selectedDate;
+      fd.append('date', targetDate);
+
+      const res = await api.bulkUploadFacebookPosters(fd);
+      if (res?.success) {
+        setActionMsg(`✅ ${res.message}`);
+        await loadSlots();
+      } else {
+        alert(res?.error || 'पोस्टर अपलोड विफल रहा');
+      }
+    } catch (err: any) {
+      alert(`अपलोड में त्रुटि: ${err.message}`);
+    } finally {
+      setBulkUploadingPosters(false);
+      if (bulkPosterInputRef.current) bulkPosterInputRef.current.value = '';
+      setTimeout(() => setActionMsg(null), 6000);
+    }
+  };
+
   const currentAccount = accounts[activePlatform];
   const isConnected = currentAccount?.connected === true;
 
-  // Filtered slots for active platform
+  const activeDate = selectedDate === 'TODAY' ? todayStr : selectedDate === 'TOMORROW' ? tomorrowStr : selectedDate;
+
+  // Filtered slots for active platform & date
   const displayedSlots = slots.filter((s) => {
-    if (activePlatform !== 'facebook') return true;
-    if (fbFilter === 'ALL') return true;
-    return s.content_type === fbFilter;
+    if (activePlatform === 'facebook') {
+      if (fbFilter !== 'ALL' && s.content_type !== fbFilter) return false;
+    }
+    if (selectedDate !== 'ALL') {
+      return s.scheduled_date === activeDate;
+    }
+    return true;
   });
+
+  // Calculate target metrics for current view
+  const now = new Date();
+  let uploadedCount = 0;
+  let missedCount = 0;
+  let scheduledCount = 0;
+  let emptyCount = 0;
+
+  for (const s of displayedSlots) {
+    const slotDateTime = new Date(`${s.scheduled_date}T${s.scheduled_time}:00`);
+    const isPast = slotDateTime.getTime() <= now.getTime();
+    const hasMedia = Boolean(s.media_path);
+
+    if (s.status === 'PUBLISHED') {
+      uploadedCount++;
+    } else if (isPast) {
+      missedCount++;
+    } else if (hasMedia) {
+      scheduledCount++;
+    } else {
+      emptyCount++;
+    }
+  }
 
   return (
     <div className="bizz-app" style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
@@ -301,6 +406,62 @@ export const AutoVideoUploaderView: React.FC<AutoVideoUploaderViewProps> = ({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* Auto-distribute from studio button */}
+            <button
+              onClick={handleAutoDistributeFromStudio}
+              disabled={autoDistributing}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 14px',
+                borderRadius: 8,
+                background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
+                border: 'none',
+                color: '#ffffff',
+                cursor: 'pointer',
+                fontWeight: 700,
+                fontSize: 12,
+                boxShadow: '0 2px 8px rgba(22, 163, 74, 0.35)'
+              }}
+              title="क्लिप स्टूडियो के वीडियो को Part 1, Part 2... के अनुसार सभी स्लॉट्स में ऑटो-फ़िल करें"
+            >
+              <Send size={14} />
+              <span>{autoDistributing ? 'ऑटो-फ़िल हो रहा है...' : '⚡ क्लिप स्टूडियो से ऑटो-फ़िल करें'}</span>
+            </button>
+
+            {/* Bulk Poster Upload for Facebook */}
+            {activePlatform === 'facebook' && (
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '8px 14px',
+                  borderRadius: 8,
+                  background: '#0D9488',
+                  color: '#ffffff',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  fontSize: 12,
+                  boxShadow: '0 2px 8px rgba(13, 148, 136, 0.3)'
+                }}
+                title="Facebook के 24 hourly फोटो स्लॉट्स (:30) में एक साथ फोटो/पोस्टर अपलोड करें"
+              >
+                <Upload size={14} />
+                <span>{bulkUploadingPosters ? 'अपलोड हो रहा है...' : '🖼️ 24 पोस्टर्स बल्क अपलोड करें'}</span>
+                <input
+                  ref={bulkPosterInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={handleBulkUploadPosters}
+                  disabled={bulkUploadingPosters}
+                />
+              </label>
+            )}
+
             <button
               onClick={loadSlots}
               style={{
@@ -364,10 +525,85 @@ export const AutoVideoUploaderView: React.FC<AutoVideoUploaderViewProps> = ({
           </div>
         )}
 
+        {/* Date Selector & Target Status Bar */}
+        <div style={{ padding: '12px 28px 0', display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* Date Selector Pills */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Calendar size={13} />
+              तारीख (Date):
+            </span>
+            <button
+              onClick={() => setSelectedDate('TODAY')}
+              style={{
+                padding: '5px 12px',
+                borderRadius: 14,
+                border: selectedDate === 'TODAY' ? '1px solid #0F172A' : '1px solid #CBD5E1',
+                background: selectedDate === 'TODAY' ? '#0F172A' : '#ffffff',
+                color: selectedDate === 'TODAY' ? '#ffffff' : '#334155',
+                fontWeight: 700,
+                fontSize: 11.5,
+                cursor: 'pointer'
+              }}
+            >
+              आज ({todayStr})
+            </button>
+            <button
+              onClick={() => setSelectedDate('TOMORROW')}
+              style={{
+                padding: '5px 12px',
+                borderRadius: 14,
+                border: selectedDate === 'TOMORROW' ? '1px solid #0F172A' : '1px solid #CBD5E1',
+                background: selectedDate === 'TOMORROW' ? '#0F172A' : '#ffffff',
+                color: selectedDate === 'TOMORROW' ? '#ffffff' : '#334155',
+                fontWeight: 700,
+                fontSize: 11.5,
+                cursor: 'pointer'
+              }}
+            >
+              कल ({tomorrowStr})
+            </button>
+            <button
+              onClick={() => setSelectedDate('ALL')}
+              style={{
+                padding: '5px 12px',
+                borderRadius: 14,
+                border: selectedDate === 'ALL' ? '1px solid #0F172A' : '1px solid #CBD5E1',
+                background: selectedDate === 'ALL' ? '#0F172A' : '#ffffff',
+                color: selectedDate === 'ALL' ? '#ffffff' : '#334155',
+                fontWeight: 700,
+                fontSize: 11.5,
+                cursor: 'pointer'
+              }}
+            >
+              सभी तारीखें (All Dates)
+            </button>
+          </div>
+
+          {/* Target Ledger Metrics */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#F8FAFC', padding: '6px 14px', borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 12 }}>
+            <span style={{ fontWeight: 800, color: '#0F172A' }}>
+              🎯 डेली स्टेटस ({activePlatform === 'facebook' ? '48 स्लॉट्स' : '2 स्लॉट्स'}):
+            </span>
+            <span style={{ fontWeight: 700, color: '#16A34A', background: '#DCFCE7', padding: '2px 8px', borderRadius: 6 }}>
+              ✅ अपलोड हो गया: {uploadedCount}
+            </span>
+            <span style={{ fontWeight: 700, color: '#DC2626', background: '#FEE2E2', padding: '2px 8px', borderRadius: 6 }}>
+              ❌ अपलोड नहीं हुआ: {missedCount}
+            </span>
+            <span style={{ fontWeight: 700, color: '#2563EB', background: '#EFF6FF', padding: '2px 8px', borderRadius: 6 }}>
+              ⏳ शेड्यूल है: {scheduledCount}
+            </span>
+            <span style={{ fontWeight: 700, color: '#64748B', background: '#F1F5F9', padding: '2px 8px', borderRadius: 6 }}>
+              ⚠️ खाली: {emptyCount}
+            </span>
+          </div>
+        </div>
+
         {/* Facebook Filter Pills */}
         {activePlatform === 'facebook' && (
-          <div style={{ padding: '12px 28px 0', display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>फिल्टर स्लॉट्स:</span>
+          <div style={{ padding: '10px 28px 0', display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>कंटेंट टाइप:</span>
             <button
               onClick={() => setFbFilter('ALL')}
               style={{
@@ -428,13 +664,23 @@ export const AutoVideoUploaderView: React.FC<AutoVideoUploaderViewProps> = ({
             {displayedSlots.map((slot) => {
               const hasMedia = Boolean(slot.media_path);
               const isPublished = slot.status === 'PUBLISHED';
+              const slotDateTime = new Date(`${slot.scheduled_date}T${slot.scheduled_time}:00`);
+              const isPast = slotDateTime.getTime() <= now.getTime();
+
+              const borderStyle = isPublished
+                ? '2px solid #22c55e'
+                : isPast
+                ? '2px solid #ef4444'
+                : hasMedia
+                ? '1.5px solid #3b82f6'
+                : '1px dashed #CBD5E1';
 
               return (
                 <div
                   key={slot.id}
                   style={{
                     background: '#ffffff',
-                    border: hasMedia ? '1.5px solid #22c55e' : '1px solid #E2E8F0',
+                    border: borderStyle,
                     borderRadius: 12,
                     padding: 16,
                     display: 'flex',
@@ -475,12 +721,98 @@ export const AutoVideoUploaderView: React.FC<AutoVideoUploaderViewProps> = ({
                       </span>
                     </div>
 
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#1E293B', marginBottom: 4 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 800, color: '#1E293B', marginBottom: 6 }}>
                       {slot.slot_label}
                     </div>
 
+                    {/* STATUS LEDGER BANNER */}
+                    {isPublished ? (
+                      <div
+                        style={{
+                          background: '#DCFCE7',
+                          border: '1px solid #86EFAC',
+                          borderRadius: 8,
+                          padding: '8px 10px',
+                          marginTop: 8,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          color: '#15803D'
+                        }}
+                      >
+                        <CheckCircle2 size={16} />
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 800 }}>✅ अपलोड हो गया (Uploaded Successfully)</div>
+                          <div style={{ fontSize: 11, color: '#166534', marginTop: 1 }}>
+                            पब्लिश समय: {slot.published_at ? new Date(slot.published_at).toLocaleTimeString() : slot.scheduled_time}
+                          </div>
+                        </div>
+                      </div>
+                    ) : isPast ? (
+                      <div
+                        style={{
+                          background: '#FEE2E2',
+                          border: '1px solid #FCA5A5',
+                          borderRadius: 8,
+                          padding: '8px 10px',
+                          marginTop: 8,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          color: '#B91C1C'
+                        }}
+                      >
+                        <AlertCircle size={16} />
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 800 }}>❌ अपलोड नहीं हुआ (समय बीत चुका है)</div>
+                          <div style={{ fontSize: 10.5, color: '#991B1B', marginTop: 1 }}>
+                            समय ({slot.scheduled_time}) मिस हो गया और वीडियो अपलोड नहीं हुआ।
+                          </div>
+                        </div>
+                      </div>
+                    ) : hasMedia ? (
+                      <div
+                        style={{
+                          background: '#EFF6FF',
+                          border: '1px solid #BFDBFE',
+                          borderRadius: 8,
+                          padding: '8px 10px',
+                          marginTop: 8,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          color: '#1D4ED8'
+                        }}
+                      >
+                        <Clock size={16} />
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 800 }}>⏳ शेड्यूल है (तय समय पर ऑटो-अपलोड होगा)</div>
+                          <div style={{ fontSize: 11, color: '#1E40AF', marginTop: 1 }}>
+                            फाइल: {slot.media_name || 'Attached Media'}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          background: '#F8FAFC',
+                          border: '1.5px dashed #CBD5E1',
+                          borderRadius: 8,
+                          padding: '10px 10px',
+                          marginTop: 8,
+                          textAlign: 'center',
+                          color: '#64748B'
+                        }}
+                      >
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>⚠️ स्लॉट खाली (वीडियो की प्रतीक्षा)</div>
+                        <div style={{ fontSize: 10.5, color: '#94A3B8', marginTop: 2 }}>
+                          क्लिप स्टूडियो से ऑटो-फ़िल करें या सीधे वीडियो जोड़ें
+                        </div>
+                      </div>
+                    )}
+
                     {/* Media / Video Info */}
-                    {hasMedia ? (
+                    {hasMedia && (
                       <div
                         style={{
                           background: '#F8FAFC',
@@ -495,7 +827,7 @@ export const AutoVideoUploaderView: React.FC<AutoVideoUploaderViewProps> = ({
                           <span style={{ wordBreak: 'break-all' }}>{slot.media_name || 'Attached Video/Media'}</span>
                         </div>
                         {slot.title && (
-                          <div style={{ fontSize: 11.5, color: '#334155', marginTop: 4, fontWeight: 600 }}>
+                          <div style={{ fontSize: 11.5, color: '#334155', marginTop: 4, fontWeight: 700 }}>
                             शीर्षक: {slot.title}
                           </div>
                         )}
@@ -504,20 +836,6 @@ export const AutoVideoUploaderView: React.FC<AutoVideoUploaderViewProps> = ({
                             {slot.caption}
                           </div>
                         )}
-                      </div>
-                    ) : (
-                      <div
-                        style={{
-                          padding: '16px 12px',
-                          border: '1.5px dashed #CBD5E1',
-                          borderRadius: 8,
-                          textAlign: 'center',
-                          color: '#94A3B8',
-                          fontSize: 12,
-                          marginTop: 8
-                        }}
-                      >
-                        अभी कोई वीडियो या पोस्टर नहीं जोड़ा गया
                       </div>
                     )}
                   </div>
