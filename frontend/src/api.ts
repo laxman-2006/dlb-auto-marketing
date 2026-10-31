@@ -269,6 +269,9 @@ export const api = {
 
   // Social Media Auto-Uploader APIs (YouTube, Instagram, Facebook)
   getSocialAccounts: () => fetchJson<any>(`${API_BASE}/social/accounts`),
+  getYouTubeAuthUrl: () => fetchJson<{ success: boolean; url: string; state: string }>(`${API_BASE}/social/youtube/auth`),
+  disconnectYouTube: () => fetchJson<any>(`${API_BASE}/social/youtube/disconnect`, { method: 'POST' }),
+  getYouTubeStatus: () => fetchJson<any>(`${API_BASE}/social/youtube/status`),
   saveSocialAccount: (payload: any) =>
     fetchJson<any>(`${API_BASE}/social/accounts`, {
       method: 'POST',

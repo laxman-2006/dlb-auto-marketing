@@ -63,5 +63,13 @@ export function initSocialAndVideoSchema() {
     );
   `);
 
+  // Safe non-destructive column migrations for YouTube video tracking
+  try {
+    db.exec(`ALTER TABLE social_schedules ADD COLUMN youtube_video_id TEXT`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE social_schedules ADD COLUMN youtube_video_url TEXT`);
+  } catch {}
+
   console.log('[Database] Social Media Auto-Uploader & Video Clipper tables initialized.');
 }

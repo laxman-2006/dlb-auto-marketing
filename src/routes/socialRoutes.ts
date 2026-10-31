@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { SocialSchedulerService } from '../services/socialSchedulerService';
+import { YouTubeService } from '../services/youtubeService';
 
 const router = Router();
 
@@ -18,6 +19,63 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage });
+
+// ==========================================
+// YOUTUBE OAUTH 2.0 ENDPOINTS
+// ==========================================
+
+// GET /api/social/youtube/auth - Start Google OAuth flow
+router.get('/youtube/auth', (req: Request, res: Response): any => {
+  try {
+    const { url, state } = YouTubeService.generateAuthUrl();
+    if (req.query.redirect === 'true' || req.headers.accept?.includes('text/html')) {
+      return res.redirect(url);
+    }
+    return res.json({ success: true, url, state });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/social/youtube/callback - Google OAuth callback
+router.get('/youtube/callback', async (req: Request, res: Response): Promise<any> => {
+  const code = req.query.code as string;
+  const state = req.query.state as string;
+  const error = req.query.error as string;
+
+  if (error) {
+    console.error('[OAuth Callback] Google returned error:', error);
+    return res.redirect(`/?hub=settings&tab=youtube&status=error&message=${encodeURIComponent(`Google authorization error: ${error}`)}`);
+  }
+
+  if (!code || !state) {
+    return res.redirect(`/?hub=settings&tab=youtube&status=error&message=${encodeURIComponent('Missing authorization code or state token from Google.')}`);
+  }
+
+  try {
+    const { channelTitle } = await YouTubeService.handleOAuthCallback(code, state);
+    return res.redirect(`/?hub=settings&tab=youtube&status=success&channel=${encodeURIComponent(channelTitle)}`);
+  } catch (err: any) {
+    console.error('[OAuth Callback] Error handling callback:', err.message);
+    return res.redirect(`/?hub=settings&tab=youtube&status=error&message=${encodeURIComponent(err.message)}`);
+  }
+});
+
+// POST /api/social/youtube/disconnect - Disconnect YouTube account
+router.post('/youtube/disconnect', async (_req: Request, res: Response): Promise<any> => {
+  try {
+    await YouTubeService.disconnect();
+    return res.json({ success: true, message: 'YouTube channel disconnected successfully.' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/social/youtube/status - Get YouTube connection info
+router.get('/youtube/status', (_req: Request, res: Response) => {
+  const status = YouTubeService.getConnectionStatus();
+  res.json({ success: true, ...status });
+});
 
 // GET /api/social/accounts - Get connection status of YouTube, Instagram, Facebook
 router.get('/accounts', (_req: Request, res: Response) => {

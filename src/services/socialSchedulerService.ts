@@ -2,6 +2,7 @@ import { db } from '../db/database';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs';
+import { YouTubeService } from './youtubeService';
 
 export interface SocialAccountConfig {
   platform: 'youtube' | 'instagram' | 'facebook';
@@ -416,8 +417,13 @@ export class SocialSchedulerService {
    * Trigger immediate publish for a slot
    */
   public static async publishSlotNow(slotId: string): Promise<{ success: boolean; message: string }> {
-    const slot = db.prepare('SELECT * FROM social_schedules WHERE id = ?').get(slotId) as ScheduleSlot | undefined;
+    const slot = db.prepare('SELECT * FROM social_schedules WHERE id = ?').get(slotId) as (ScheduleSlot & { youtube_video_id?: string; youtube_video_url?: string }) | undefined;
     if (!slot) return { success: false, message: 'Slot not found' };
+
+    // Prevent duplicate uploads if already marked PUBLISHED
+    if (slot.status === 'PUBLISHED' && slot.youtube_video_id) {
+      return { success: true, message: `Already published to YouTube (Video ID: ${slot.youtube_video_id})` };
+    }
 
     if (!slot.media_path && !slot.caption) {
       return { success: false, message: 'No media or text attached to this slot yet.' };
@@ -432,8 +438,44 @@ export class SocialSchedulerService {
       };
     }
 
-    // In a live production environment, this calls the respective Graph API / YouTube Data API v3
-    // Here we record success and log the simulated / live transmission
+    // REAL YOUTUBE PUBLISHING VIA YOUTUBE DATA API v3
+    if (slot.platform === 'youtube') {
+      if (!slot.media_path || !fs.existsSync(slot.media_path)) {
+        const errMsg = `⚠️ YouTube video file missing or not found on disk at: ${slot.media_path}`;
+        db.prepare(`UPDATE social_schedules SET publish_log = ? WHERE id = ?`).run(errMsg, slotId);
+        return { success: false, message: errMsg };
+      }
+
+      try {
+        console.log(`[AutoUploader] Initiating real YouTube upload for slot ${slot.slot_label} (Title: ${slot.title})...`);
+        const result = await YouTubeService.uploadVideo({
+          filePath: slot.media_path,
+          title: slot.title || 'DLB Gaming Exclusive Video',
+          description: slot.caption || 'Uploaded via DLB AUTO MARKETING.',
+          tags: ['dlb', 'gaming', 'shorts', 'viral', 'reels'],
+          privacyStatus: 'public'
+        });
+
+        const publishedAt = new Date().toISOString();
+        const logMsg = `[SUCCESS] Published to YOUTUBE! Video ID: ${result.videoId} | URL: ${result.videoUrl} at ${new Date().toLocaleTimeString()}`;
+
+        db.prepare(`
+          UPDATE social_schedules
+          SET status = 'PUBLISHED', published_at = ?, publish_log = ?, youtube_video_id = ?, youtube_video_url = ?
+          WHERE id = ?
+        `).run(publishedAt, logMsg, result.videoId, result.videoUrl, slotId);
+
+        console.log(`[AutoUploader] ${logMsg}`);
+        return { success: true, message: logMsg };
+      } catch (err: any) {
+        const errorLog = `[FAILED] YouTube API Upload Error: ${err.message}`;
+        console.error(`[AutoUploader] ${errorLog}`);
+        db.prepare(`UPDATE social_schedules SET publish_log = ? WHERE id = ?`).run(errorLog, slotId);
+        return { success: false, message: errorLog };
+      }
+    }
+
+    // Default simulated / Graph API behavior for other platforms (Instagram / Facebook)
     const publishedAt = new Date().toISOString();
     const logMsg = `[SUCCESS] Published to ${slot.platform.toUpperCase()} at ${new Date().toLocaleTimeString()}! Content: ${slot.content_type} (${slot.media_name || 'Direct Post'})`;
 
@@ -465,6 +507,19 @@ export class SocialSchedulerService {
         updated_at: r.updated_at
       };
     }
+
+    // Accurate real-time OAuth status for YouTube
+    try {
+      const ytStatus = YouTubeService.getConnectionStatus();
+      res.youtube = {
+        connected: ytStatus.connected,
+        account_name: ytStatus.channelName || res.youtube.account_name,
+        account_id: ytStatus.channelId || res.youtube.account_id,
+        hasClientId: ytStatus.hasClientId,
+        updated_at: res.youtube.updated_at
+      };
+    } catch {}
+
     return res;
   }
 

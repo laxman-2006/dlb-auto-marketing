@@ -43,9 +43,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onBack }) => {
 
   // Social accounts states (YouTube, Instagram, Facebook)
   const [socialAccounts, setSocialAccounts] = useState<any>({});
-  const [ytChannelName, setYtChannelName] = useState('DLB Auto Gaming & Motors');
-  const [ytClientId, setYtClientId] = useState('');
-  const [ytClientSecret, setYtClientSecret] = useState('');
+  const [ytChannelName, setYtChannelName] = useState('');
+  const [ytChannelId, setYtChannelId] = useState('');
+  const [ytConnecting, setYtConnecting] = useState(false);
   const [igAccountName, setIgAccountName] = useState('dlb_auto_official');
   const [igToken, setIgToken] = useState('');
   const [fbPageName, setFbPageName] = useState('DLB Auto Marketing Official');
@@ -76,24 +76,58 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onBack }) => {
       const socialData = await api.getSocialAccounts();
       if (socialData?.success) {
         setSocialAccounts(socialData.accounts || {});
+        if (socialData.accounts?.youtube) {
+          setYtChannelName(socialData.accounts.youtube.account_name || '');
+          setYtChannelId(socialData.accounts.youtube.account_id || '');
+        }
       }
     } catch (err) {
       console.error('Failed to load social accounts:', err);
     }
   };
 
-  const handleSaveSocial = async (platform: 'youtube' | 'instagram' | 'facebook', connectToggle?: boolean) => {
+  const handleConnectYouTube = async () => {
+    try {
+      setYtConnecting(true);
+      setBannerMessage(null);
+      const res = await api.getYouTubeAuthUrl();
+      if (res?.success && res.url) {
+        // Redirect to official Google OAuth 2.0 consent screen
+        window.location.href = res.url;
+      } else {
+        throw new Error('Failed to obtain Google authorization URL from server.');
+      }
+    } catch (err: any) {
+      setBannerMessage({
+        type: 'error',
+        text: err.message || 'Error connecting to Google OAuth. Ensure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are configured in backend .env.'
+      });
+      setYtConnecting(false);
+    }
+  };
+
+  const handleDisconnectYouTube = async () => {
+    if (!window.confirm('Are you sure you want to disconnect YouTube? Scheduled automatic video uploads will be paused until re-connected.')) return;
+    try {
+      setBannerMessage(null);
+      const res = await api.disconnectYouTube();
+      if (res?.success) {
+        setBannerMessage({ type: 'info', text: 'YouTube channel disconnected successfully.' });
+        await loadStatus();
+      }
+    } catch (err: any) {
+      setBannerMessage({ type: 'error', text: err.message || 'Failed to disconnect YouTube channel' });
+    }
+  };
+
+  const handleSaveSocial = async (platform: 'instagram' | 'facebook', connectToggle?: boolean) => {
     try {
       setSavingSocial(true);
       const current = socialAccounts[platform] || {};
       const isConnecting = connectToggle !== undefined ? connectToggle : !current.connected;
 
       let payload: any = { platform, connected: isConnecting };
-      if (platform === 'youtube') {
-        payload.account_name = ytChannelName;
-        payload.client_id = ytClientId;
-        payload.client_secret = ytClientSecret;
-      } else if (platform === 'instagram') {
+      if (platform === 'instagram') {
         payload.account_name = igAccountName;
         payload.access_token = igToken;
       } else if (platform === 'facebook') {
@@ -114,8 +148,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onBack }) => {
   };
 
   useEffect(() => {
+    // Check for Google OAuth callback parameters
+    const params = new URLSearchParams(window.location.search);
+    const urlTab = params.get('tab');
+    const urlStatus = params.get('status');
+    const urlChannel = params.get('channel');
+    const urlMessage = params.get('message');
+
+    if (urlTab === 'youtube') {
+      setActiveTab('youtube');
+      if (urlStatus === 'success') {
+        setBannerMessage({
+          type: 'success',
+          text: `🎉 YouTube Channel "${urlChannel || 'Official'}" successfully authenticated with Google OAuth 2.0!`
+        });
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (urlStatus === 'error') {
+        setBannerMessage({
+          type: 'error',
+          text: `❌ Google OAuth error: ${urlMessage || 'Authentication failed'}`
+        });
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+
     loadStatus();
-    // Auto-poll status every 3 seconds so scanning the QR instantly triggers CONNECTED
+    // Auto-poll status every 3 seconds so scanning the QR or finishing OAuth triggers CONNECTED
     pollTimerRef.current = setInterval(() => {
       loadStatus();
     }, 3000);
@@ -1045,7 +1103,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onBack }) => {
       {activeTab === 'youtube' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div className="settings-white-card" style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{ width: 44, height: 44, borderRadius: 10, background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <YoutubeIcon size={24} color="#FF0000" />
@@ -1055,98 +1113,129 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onBack }) => {
                     YouTube Channel Automation (यूट्यूब)
                   </h3>
                   <p style={{ margin: '3px 0 0', fontSize: '13px', color: '#64748B' }}>
-                    Daily 2 Automated Dispatches: Morning 07:15 AM & Evening 07:15 PM
+                    Official Google OAuth 2.0 & YouTube Data API v3 integration
                   </p>
                 </div>
               </div>
 
               <span
                 style={{
-                  padding: '4px 12px',
+                  padding: '6px 14px',
                   borderRadius: '20px',
                   fontSize: '12px',
                   fontWeight: 700,
                   background: socialAccounts?.youtube?.connected ? '#DCFCE7' : '#FEE2E2',
-                  color: socialAccounts?.youtube?.connected ? '#15803D' : '#991B1B'
+                  color: socialAccounts?.youtube?.connected ? '#15803D' : '#991B1B',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
                 }}
               >
                 {socialAccounts?.youtube?.connected ? '● YouTube Connected' : '○ Not Connected'}
               </span>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-              <div>
-                <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '6px' }}>
-                  Channel Name (चैनल नाम):
-                </label>
-                <input
-                  type="text"
-                  value={ytChannelName}
-                  onChange={(e) => setYtChannelName(e.target.value)}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
-                />
+            {/* CHANNEL DETAILS CARD */}
+            {socialAccounts?.youtube?.connected ? (
+              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '18px', marginBottom: '20px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '14px' }}>
+                  <div>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Connected Channel (चैनल)
+                    </span>
+                    <div style={{ fontSize: '15px', fontWeight: 800, color: '#0F172A', marginTop: '4px' }}>
+                      {ytChannelName || socialAccounts?.youtube?.account_name || 'Authenticated YouTube Channel'}
+                    </div>
+                  </div>
+
+                  {ytChannelId && (
+                    <div>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Channel ID
+                      </span>
+                      <div style={{ fontSize: '13px', fontFamily: 'monospace', fontWeight: 600, color: '#334155', marginTop: '4px' }}>
+                        {ytChannelId}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Security Status
+                    </span>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#16A34A', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <CheckCircle size={15} /> Encrypted Refresh Token at Rest
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: '12px', color: '#64748B', borderTop: '1px solid #E2E8F0', paddingTop: '10px' }}>
+                  ⏱ <strong>स्वचालित शेड्यूलर (Auto-Scheduler) सक्रिय है:</strong> सुबह 07:15 AM और शाम 07:15 PM पर कतार की अगली रील अपने आप YouTube Data API v3 के माध्यम से अपलोड हो जाएगी।
+                </div>
               </div>
-
-              <div>
-                <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '6px' }}>
-                  Google Client ID (OAuth):
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 10928374-apps.googleusercontent.com"
-                  value={ytClientId}
-                  onChange={(e) => setYtClientId(e.target.value)}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
-                />
+            ) : (
+              <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '10px', padding: '18px', marginBottom: '20px' }}>
+                <h4 style={{ margin: '0 0 6px', fontSize: '14px', fontWeight: 700, color: '#1E40AF' }}>
+                  Google OAuth 2.0 सुरक्षित प्रमाणीकरण (Official Sign-In)
+                </h4>
+                <p style={{ margin: 0, fontSize: '13px', color: '#3B82F6', lineHeight: 1.5 }}>
+                  अपने YouTube चैनल को आधिकारिक Google OAuth 2.0 के ज़रिए जोड़ें। आपको कोई API Key या Client Secret यहाँ टाइप करने की आवश्यकता नहीं है—सुरक्षा के लिए सभी क्रेडेंशियल्स सर्वर साइड .env में सुरक्षित हैं।
+                </p>
               </div>
-            </div>
+            )}
 
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '6px' }}>
-                Google Client Secret / API Key:
-              </label>
-              <input
-                type="password"
-                placeholder="GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxx"
-                value={ytClientSecret}
-                onChange={(e) => setYtClientSecret(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                onClick={() => handleSaveSocial('youtube', true)}
-                disabled={savingSocial}
-                style={{
-                  padding: '10px 22px',
-                  borderRadius: '8px',
-                  background: '#FF0000',
-                  color: '#fff',
-                  border: 'none',
-                  fontWeight: 700,
-                  fontSize: '13px',
-                  cursor: 'pointer'
-                }}
-              >
-                {savingSocial ? 'Saving...' : 'Save & Connect YouTube (लॉगिन करें)'}
-              </button>
-
-              {socialAccounts?.youtube?.connected && (
+            {/* ACTION BUTTONS */}
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              {socialAccounts?.youtube?.connected ? (
                 <button
-                  onClick={() => handleSaveSocial('youtube', false)}
+                  onClick={handleDisconnectYouTube}
                   style={{
-                    padding: '10px 18px',
+                    padding: '10px 22px',
                     borderRadius: '8px',
                     background: '#FEE2E2',
                     color: '#991B1B',
-                    border: 'none',
+                    border: '1px solid #FECACA',
                     fontWeight: 700,
                     fontSize: '13px',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
                   }}
                 >
-                  Disconnect YouTube
+                  <LogOut size={16} /> Disconnect YouTube (चैनल हटाएं)
+                </button>
+              ) : (
+                <button
+                  onClick={handleConnectYouTube}
+                  disabled={ytConnecting}
+                  style={{
+                    padding: '12px 26px',
+                    borderRadius: '8px',
+                    background: '#FF0000',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '14px',
+                    cursor: ytConnecting ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    boxShadow: '0 2px 8px rgba(255, 0, 0, 0.3)',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {ytConnecting ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      Connecting to Google...
+                    </>
+                  ) : (
+                    <>
+                      <YoutubeIcon size={20} color="#ffffff" />
+                      Sign In with Google & Connect YouTube (चैनल कनेक्ट करें)
+                    </>
+                  )}
                 </button>
               )}
             </div>

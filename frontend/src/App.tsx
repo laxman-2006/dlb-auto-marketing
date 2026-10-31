@@ -35,6 +35,14 @@ export const App: React.FC = () => {
   const [tgConnected, setTgConnected] = useState(false);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('hub') === 'settings' || params.get('tab') === 'youtube') {
+      setShowIntro(false);
+      setActiveHub('settings');
+    }
+  }, []);
+
+  useEffect(() => {
     const checkStatuses = async () => {
       try {
         const wa = await api.getWhatsAppStatus();

@@ -23,5 +23,10 @@ export const config = {
     concurrency: parseInt(process.env.QUEUE_CONCURRENCY || '5', 10),
     rateLimitPerSecond: parseInt(process.env.QUEUE_RATE_LIMIT_PER_SEC || '20', 10),
     maxRetries: parseInt(process.env.QUEUE_MAX_RETRIES || '3', 10),
+  },
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID || '',
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+    redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3001/api/social/youtube/callback',
   }
 };
