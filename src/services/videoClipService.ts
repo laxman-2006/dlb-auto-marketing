@@ -149,7 +149,7 @@ export class VideoClipService {
         const clipFilename = `DLB_Part_${i + 1}_${Date.now()}.mp4`;
         const clipPath = path.join(outputBaseDir, clipFilename);
 
-        // FFmpeg command for 9:16 vertical high quality 60FPS (optimized for fast slicing)
+        // FFmpeg command for 9:16 vertical ultra gaming quality 60FPS
         // -ss before -i enables super-fast keyframe seeking (milliseconds instead of minutes)
         const args = [
           '-y',
@@ -159,10 +159,13 @@ export class VideoClipService {
           '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black',
           '-r', '60',
           '-c:v', 'libx264',
-          '-preset', 'ultrafast',
-          '-crf', '22',
+          '-preset', 'veryfast',
+          '-crf', '18',
+          '-b:v', '8M',
+          '-maxrate', '12M',
+          '-bufsize', '16M',
           '-c:a', 'aac',
-          '-b:a', '128k',
+          '-b:a', '192k',
           '-pix_fmt', 'yuv420p',
           '-threads', '0',
           clipPath

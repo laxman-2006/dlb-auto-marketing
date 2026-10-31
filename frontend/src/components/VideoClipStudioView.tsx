@@ -11,7 +11,9 @@ import {
   Film,
   CheckCircle2,
   Layers,
-  ChevronRight
+  ChevronRight,
+  ChevronLeft,
+  Search
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -68,6 +70,26 @@ export const VideoClipStudioView: React.FC<VideoClipStudioViewProps> = ({
   // Video Preview Modal
   const [previewClip, setPreviewClip] = useState<ClipRecord | null>(null);
   const [distributingAll, setDistributingAll] = useState(false);
+
+  // Filter & Search for navigating 200+ reels easily
+  const [partFilter, setPartFilter] = useState<'all' | '1-50' | '51-100' | '101-150' | '151-200' | '201-250'>('all');
+  const [partSearch, setPartSearch] = useState<string>('');
+
+  const handlePrevClip = () => {
+    if (!previewClip || !selectedJob?.clips) return;
+    const idx = selectedJob.clips.findIndex((c) => c.id === previewClip.id);
+    if (idx > 0) {
+      setPreviewClip(selectedJob.clips[idx - 1]);
+    }
+  };
+
+  const handleNextClip = () => {
+    if (!previewClip || !selectedJob?.clips) return;
+    const idx = selectedJob.clips.findIndex((c) => c.id === previewClip.id);
+    if (idx < selectedJob.clips.length - 1) {
+      setPreviewClip(selectedJob.clips[idx + 1]);
+    }
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -182,7 +204,7 @@ export const VideoClipStudioView: React.FC<VideoClipStudioViewProps> = ({
   };
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', background: '#0B1528', color: '#F8FAFC', overflow: 'hidden', position: 'relative' }}>
+    <div style={{ height: '100vh', maxHeight: '100vh', width: '100vw', minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0B1528', color: '#F8FAFC', overflow: 'hidden', position: 'relative' }}>
       {/* Subtle DLB Watermark */}
       <div className="main-watermark-bg" aria-hidden="true" />
 
@@ -329,9 +351,9 @@ export const VideoClipStudioView: React.FC<VideoClipStudioViewProps> = ({
       )}
 
       {/* Main Studio Body: 2 Columns */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', padding: '16px 28px 24px', gap: 20 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden', padding: '16px 28px 24px', gap: 20 }}>
         {/* Left Column: Upload New Video Card & Jobs History */}
-        <div style={{ width: 380, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ width: 380, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* UPLOAD CARD */}
           <div
             style={{
@@ -428,13 +450,13 @@ export const VideoClipStudioView: React.FC<VideoClipStudioViewProps> = ({
           </div>
 
           {/* PREVIOUS JOBS LIST */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: '#D4A64A', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
               <Layers size={15} />
               <span>सभी वीडियो प्रोजेक्ट्स (All Video Jobs)</span>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
               {jobs.map((j) => {
                 const isSelected = selectedJob?.id === j.id;
                 return (
@@ -483,6 +505,7 @@ export const VideoClipStudioView: React.FC<VideoClipStudioViewProps> = ({
         <div
           style={{
             flex: 1,
+            minHeight: 0,
             background: 'rgba(15, 23, 42, 0.65)',
             border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: 14,
@@ -493,204 +516,376 @@ export const VideoClipStudioView: React.FC<VideoClipStudioViewProps> = ({
           }}
         >
           {selectedJob ? (
-            <>
-              {/* Selected Job Header */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, paddingBottom: 12, borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                <div>
-                  <h2 style={{ fontSize: 17, fontWeight: 800, color: '#FFFFFF', margin: 0 }}>
-                    {selectedJob.source_name}
-                  </h2>
-                  <div style={{ fontSize: 12, color: '#94A3B8', marginTop: 3 }}>
-                    कुल लंबाई: {formatSec(selectedJob.source_duration)} • कुल रील: {selectedJob.completed_clips} / {selectedJob.total_clips} • 9:16 4K 60FPS
-                  </div>
-                </div>
+            (() => {
+              const allClips = selectedJob.clips || [];
+              const filteredClips = allClips.filter((c) => {
+                if (partSearch.trim()) {
+                  const term = partSearch.trim().toLowerCase().replace('part', '').trim();
+                  return String(c.clip_index) === term || String(c.clip_index).includes(term);
+                }
+                if (partFilter === '1-50') return c.clip_index >= 1 && c.clip_index <= 50;
+                if (partFilter === '51-100') return c.clip_index >= 51 && c.clip_index <= 100;
+                if (partFilter === '101-150') return c.clip_index >= 101 && c.clip_index <= 150;
+                if (partFilter === '151-200') return c.clip_index >= 151 && c.clip_index <= 200;
+                if (partFilter === '201-250') return c.clip_index >= 201 && c.clip_index <= 250;
+                return true;
+              });
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {selectedJob.completed_clips > 0 && (
-                    <button
-                      onClick={handleAutoDistributeAll}
-                      disabled={distributingAll}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        padding: '8px 16px',
-                        borderRadius: 8,
-                        background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
-                        border: 'none',
-                        color: '#FFFFFF',
-                        fontWeight: 800,
-                        fontSize: 12.5,
-                        cursor: 'pointer',
-                        boxShadow: '0 4px 12px rgba(22, 163, 74, 0.4)'
-                      }}
-                      title="सभी क्लिप्स को Part 1, Part 2... के अनुसार YouTube, Instagram व Facebook में भेजें"
-                    >
-                      <Send size={14} />
-                      <span>{distributingAll ? 'शेड्यूल हो रहा है...' : `🚀 सभी ${selectedJob.completed_clips} क्लिप्स ऑटो-शेड्यूल करें (Part 1, Part 2...)`}</span>
-                    </button>
-                  )}
-
-                  {selectedJob.status === 'PROCESSING' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(212, 166, 74, 0.15)', padding: '6px 12px', borderRadius: 8, color: '#D4A64A', fontSize: 12, fontWeight: 700 }}>
-                      <RefreshCw size={14} className="spin-icon" />
-                      <span>रील बन रही हैं ({selectedJob.completed_clips}/{selectedJob.total_clips})...</span>
+              return (
+                <>
+                  {/* Selected Job Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                    <div>
+                      <h2 style={{ fontSize: 17, fontWeight: 800, color: '#FFFFFF', margin: 0 }}>
+                        {selectedJob.source_name}
+                      </h2>
+                      <div style={{ fontSize: 12, color: '#94A3B8', marginTop: 3 }}>
+                        कुल लंबाई: {formatSec(selectedJob.source_duration)} • कुल रील: <strong style={{ color: '#D4A64A' }}>{selectedJob.completed_clips} / {selectedJob.total_clips} तैयार</strong> • 9:16 4K 60FPS
+                      </div>
                     </div>
-                  )}
-                </div>
-              </div>
 
-              {/* Clips Grid */}
-              <div style={{ flex: 1, overflowY: 'auto' }}>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-                    gap: 16
-                  }}
-                >
-                  {(selectedJob.clips || []).map((clip) => (
-                    <div
-                      key={clip.id}
-                      style={{
-                        background: 'rgba(11, 21, 40, 0.8)',
-                        border: '1px solid rgba(212, 166, 74, 0.3)',
-                        borderRadius: 12,
-                        padding: 12,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
-                      }}
-                    >
-                      {/* Reel Thumbnail / 9:16 Box */}
-                      <div
-                        onClick={() => setPreviewClip(clip)}
-                        style={{
-                          width: '100%',
-                          aspectRatio: '9/16',
-                          background: '#070E1A',
-                          borderRadius: 8,
-                          position: 'relative',
-                          overflow: 'hidden',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                      >
-                        <div
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      {selectedJob.completed_clips > 0 && (
+                        <button
+                          onClick={handleAutoDistributeAll}
+                          disabled={distributingAll}
                           style={{
-                            width: 44,
-                            height: 44,
-                            borderRadius: '50%',
-                            background: 'rgba(212, 166, 74, 0.9)',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#0B1528',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.4)'
-                          }}
-                        >
-                          <Play size={20} fill="#0B1528" />
-                        </div>
-                        <span
-                          style={{
-                            position: 'absolute',
-                            top: 8,
-                            left: 8,
-                            fontSize: 10,
+                            gap: 6,
+                            padding: '8px 16px',
+                            borderRadius: 8,
+                            background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
+                            border: 'none',
+                            color: '#FFFFFF',
                             fontWeight: 800,
-                            padding: '2px 8px',
-                            borderRadius: 4,
-                            background: 'rgba(0,0,0,0.75)',
-                            color: '#D4A64A',
-                            border: '1px solid rgba(212, 166, 74, 0.4)'
+                            fontSize: 12.5,
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 12px rgba(22, 163, 74, 0.4)'
                           }}
+                          title="सभी क्लिप्स को Part 1, Part 2... के अनुसार YouTube, Instagram व Facebook में भेजें"
                         >
-                          Part {clip.clip_index}
-                        </span>
-                        <span
-                          style={{
-                            position: 'absolute',
-                            bottom: 8,
-                            right: 8,
-                            fontSize: 10,
-                            fontWeight: 700,
-                            padding: '2px 6px',
-                            borderRadius: 4,
-                            background: 'rgba(0,0,0,0.7)',
-                            color: '#ffffff'
-                          }}
-                        >
-                          {clip.duration}s
-                        </span>
-                      </div>
+                          <Send size={14} />
+                          <span>{distributingAll ? 'शेड्यूल हो रहा है...' : `🚀 सभी ${selectedJob.completed_clips} क्लिप्स ऑटो-शेड्यूल करें (Part 1, Part 2...)`}</span>
+                        </button>
+                      )}
 
-                      {/* Info & Actions */}
-                      <div style={{ marginTop: 10 }}>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: '#FFFFFF' }}>
-                          Part {clip.clip_index} ({formatSec(clip.start_time)} - {formatSec(clip.start_time + clip.duration)})
+                      {selectedJob.status === 'PROCESSING' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(212, 166, 74, 0.15)', padding: '6px 12px', borderRadius: 8, color: '#D4A64A', fontSize: 12, fontWeight: 700 }}>
+                          <RefreshCw size={14} className="spin-icon" />
+                          <span>रील बन रही हैं ({selectedJob.completed_clips}/{selectedJob.total_clips})...</span>
                         </div>
-                        <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
-                          {clip.resolution} • {clip.fps} FPS • {formatBytes(clip.file_size)}
-                        </div>
-
-                        {/* Action buttons */}
-                        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-                          <a
-                            href={`/api/video/stream/${clip.id}`}
-                            download={clip.clip_filename}
-                            style={{
-                              flex: 1,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: 4,
-                              padding: '6px 8px',
-                              borderRadius: 6,
-                              background: 'rgba(255, 255, 255, 0.1)',
-                              color: '#FFFFFF',
-                              fontSize: 11,
-                              fontWeight: 700,
-                              textDecoration: 'none'
-                            }}
-                          >
-                            <Download size={12} />
-                            <span>Download</span>
-                          </a>
-
-                          <button
-                            onClick={() => {
-                              setClipToSend(clip);
-                              setTargetPlatform('youtube');
-                            }}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: 4,
-                              padding: '6px 8px',
-                              borderRadius: 6,
-                              background: '#D4A64A',
-                              border: 'none',
-                              color: '#0B1528',
-                              fontSize: 11,
-                              fontWeight: 800,
-                              cursor: 'pointer'
-                            }}
-                            title="सीधे ऑटो-अपलोडर में शेड्यूल करें"
-                          >
-                            <Send size={12} />
-                            <span>Schedule</span>
-                          </button>
-                        </div>
-                      </div>
+                      )}
                     </div>
-                  ))}
-                </div>
-              </div>
-            </>
+                  </div>
+
+                  {/* Navigation / Filter Bar for 231 Reels */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#D4A64A', marginRight: 4 }}>
+                        क्विक जंप:
+                      </span>
+                      {[
+                        { key: 'all', label: `सभी रील (${allClips.length})` },
+                        { key: '1-50', label: 'Part 1-50' },
+                        { key: '51-100', label: 'Part 51-100' },
+                        { key: '101-150', label: 'Part 101-150' },
+                        { key: '151-200', label: 'Part 151-200' },
+                        { key: '201-250', label: 'Part 201-231' },
+                      ].map((tab) => {
+                        const active = partFilter === tab.key && !partSearch.trim();
+                        return (
+                          <button
+                            key={tab.key}
+                            onClick={() => {
+                              setPartFilter(tab.key as any);
+                              setPartSearch('');
+                            }}
+                            style={{
+                              padding: '5px 11px',
+                              borderRadius: 6,
+                              fontSize: 11.5,
+                              fontWeight: active ? 800 : 600,
+                              background: active ? '#D4A64A' : 'rgba(255, 255, 255, 0.08)',
+                              color: active ? '#0B1528' : '#CBD5E1',
+                              border: active ? '1px solid #D4A64A' : '1px solid rgba(255, 255, 255, 0.15)',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s'
+                            }}
+                          >
+                            {tab.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255, 255, 255, 0.07)', border: '1px solid rgba(255, 255, 255, 0.18)', borderRadius: 8, padding: '5px 12px' }}>
+                      <Search size={14} color="#94A3B8" />
+                      <input
+                        type="text"
+                        placeholder="Reel # खोजें (उदा: 55)..."
+                        value={partSearch}
+                        onChange={(e) => setPartSearch(e.target.value)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          outline: 'none',
+                          color: '#FFFFFF',
+                          fontSize: 12,
+                          width: 150
+                        }}
+                      />
+                      {partSearch && (
+                        <button
+                          onClick={() => setPartSearch('')}
+                          style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', fontSize: 12 }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Showing count indicator */}
+                  <div style={{ fontSize: 11.5, color: '#94A3B8', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>
+                      दिखाई जा रही रील: <strong style={{ color: '#FFFFFF' }}>{filteredClips.length}</strong> (कुल {allClips.length} में से)
+                      {partSearch.trim() && <span style={{ color: '#D4A64A', marginLeft: 6 }}>• खोज परिणाम: "{partSearch.trim()}"</span>}
+                    </span>
+                    <span style={{ color: '#94A3B8', fontSize: 11 }}>
+                      💡 रील पर माउस ले जाएं (Hover) करके लाइव प्रीव्यू देखें या 'देखें' दबाएं
+                    </span>
+                  </div>
+
+                  {/* Clips Grid with True Scrollability */}
+                  <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 6 }}>
+                    {filteredClips.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94A3B8' }}>
+                        <Film size={36} color="#D4A64A" style={{ opacity: 0.5, marginBottom: 8 }} />
+                        <div style={{ fontSize: 14, fontWeight: 700, color: '#FFFFFF' }}>कोई रील नहीं मिली</div>
+                        <div style={{ fontSize: 12, marginTop: 4 }}>कृपया दूसरा पार्ट चुनें या सर्च रीसेट करें</div>
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))',
+                          gap: 16
+                        }}
+                      >
+                        {filteredClips.map((clip) => (
+                          <div
+                            key={clip.id}
+                            style={{
+                              background: 'rgba(11, 21, 40, 0.85)',
+                              border: '1px solid rgba(212, 166, 74, 0.25)',
+                              borderRadius: 12,
+                              padding: 12,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
+                              transition: 'transform 0.15s, border-color 0.15s'
+                            }}
+                          >
+                            {/* Reel Thumbnail with Real Video Frame & Live Hover Preview */}
+                            <div
+                              onClick={() => setPreviewClip(clip)}
+                              style={{
+                                width: '100%',
+                                aspectRatio: '9/16',
+                                background: '#000000',
+                                borderRadius: 8,
+                                position: 'relative',
+                                overflow: 'hidden',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                border: '1px solid rgba(212, 166, 74, 0.2)'
+                              }}
+                              title="क्लिक करके ऐप में पूरी रील देखें"
+                            >
+                              <video
+                                src={`/api/video/stream/${clip.id}#t=0.5`}
+                                preload="metadata"
+                                muted
+                                playsInline
+                                style={{
+                                  width: '100%',
+                                  height: '100%',
+                                  objectFit: 'cover',
+                                  borderRadius: 7,
+                                  position: 'absolute',
+                                  inset: 0
+                                }}
+                                onMouseEnter={(e) => {
+                                  const v = e.currentTarget;
+                                  v.play().catch(() => {});
+                                }}
+                                onMouseLeave={(e) => {
+                                  const v = e.currentTarget;
+                                  v.pause();
+                                  v.currentTime = 0.5;
+                                }}
+                              />
+
+                              {/* Subtle Overlay Gradient */}
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  inset: 0,
+                                  background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 45%, rgba(0,0,0,0.55) 100%)',
+                                  pointerEvents: 'none'
+                                }}
+                              />
+
+                              {/* Play Button Badge */}
+                              <div
+                                style={{
+                                  position: 'relative',
+                                  zIndex: 2,
+                                  width: 44,
+                                  height: 44,
+                                  borderRadius: '50%',
+                                  background: 'rgba(212, 166, 74, 0.92)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  color: '#0B1528',
+                                  boxShadow: '0 4px 14px rgba(0,0,0,0.7)',
+                                  pointerEvents: 'none'
+                                }}
+                              >
+                                <Play size={22} fill="#0B1528" style={{ marginLeft: 2 }} />
+                              </div>
+
+                              <span
+                                style={{
+                                  position: 'absolute',
+                                  top: 8,
+                                  left: 8,
+                                  zIndex: 3,
+                                  fontSize: 10,
+                                  fontWeight: 800,
+                                  padding: '2px 8px',
+                                  borderRadius: 4,
+                                  background: 'rgba(0,0,0,0.85)',
+                                  color: '#D4A64A',
+                                  border: '1px solid rgba(212, 166, 74, 0.4)'
+                                }}
+                              >
+                                Part {clip.clip_index}
+                              </span>
+
+                              <span
+                                style={{
+                                  position: 'absolute',
+                                  bottom: 8,
+                                  right: 8,
+                                  zIndex: 3,
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  padding: '2px 6px',
+                                  borderRadius: 4,
+                                  background: 'rgba(0,0,0,0.8)',
+                                  color: '#ffffff'
+                                }}
+                              >
+                                {clip.duration}s
+                              </span>
+                            </div>
+
+                            {/* Info & Action Buttons */}
+                            <div style={{ marginTop: 10 }}>
+                              <div style={{ fontSize: 13, fontWeight: 800, color: '#FFFFFF' }}>
+                                Part {clip.clip_index} ({formatSec(clip.start_time)} - {formatSec(clip.start_time + clip.duration)})
+                              </div>
+                              <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
+                                {clip.resolution} • {clip.fps} FPS • {formatBytes(clip.file_size)}
+                              </div>
+
+                              {/* 3 Explicit Action Buttons: Play, Download, Schedule */}
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5, marginTop: 10 }}>
+                                <button
+                                  onClick={() => setPreviewClip(clip)}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 3,
+                                    padding: '6px 4px',
+                                    borderRadius: 6,
+                                    background: 'rgba(212, 166, 74, 0.18)',
+                                    border: '1px solid rgba(212, 166, 74, 0.4)',
+                                    color: '#D4A64A',
+                                    fontSize: 11,
+                                    fontWeight: 800,
+                                    cursor: 'pointer'
+                                  }}
+                                  title="ऐप के अंदर चलाएं"
+                                >
+                                  <Play size={11} fill="#D4A64A" />
+                                  <span>देखें</span>
+                                </button>
+
+                                <a
+                                  href={`/api/video/stream/${clip.id}`}
+                                  download={clip.clip_filename}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 3,
+                                    padding: '6px 4px',
+                                    borderRadius: 6,
+                                    background: 'rgba(255, 255, 255, 0.08)',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    color: '#FFFFFF',
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    textDecoration: 'none'
+                                  }}
+                                  title="गैलरी या पीसी में डाउनलोड करें"
+                                >
+                                  <Download size={11} />
+                                  <span>डाउनलोड</span>
+                                </a>
+
+                                <button
+                                  onClick={() => {
+                                    setClipToSend(clip);
+                                    setTargetPlatform('youtube');
+                                  }}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 3,
+                                    padding: '6px 4px',
+                                    borderRadius: 6,
+                                    background: '#D4A64A',
+                                    border: 'none',
+                                    color: '#0B1528',
+                                    fontSize: 11,
+                                    fontWeight: 800,
+                                    cursor: 'pointer'
+                                  }}
+                                  title="सीधे ऑटो-अपलोडर में शेड्यूल करें"
+                                >
+                                  <Send size={11} />
+                                  <span>शेड्यूल</span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()
           ) : (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94A3B8' }}>
               <Film size={48} color="#D4A64A" style={{ marginBottom: 12, opacity: 0.5 }} />
@@ -804,44 +999,213 @@ export const VideoClipStudioView: React.FC<VideoClipStudioViewProps> = ({
 
       {/* 9:16 VIDEO PREVIEW MODAL */}
       {previewClip && (
-        <div className="modal-backdrop" onClick={() => setPreviewClip(null)}>
+        <div
+          className="modal-backdrop"
+          onClick={() => setPreviewClip(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.88)',
+            backdropFilter: 'blur(12px)',
+            zIndex: 999999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16
+          }}
+        >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: 340,
-              aspectRatio: '9/16',
-              background: '#000000',
+              width: '100%',
+              maxWidth: 420,
+              background: '#0B1528',
               borderRadius: 16,
               overflow: 'hidden',
-              position: 'relative',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.8)',
-              border: '2px solid #D4A64A'
+              boxShadow: '0 25px 60px rgba(0,0,0,0.9)',
+              border: '2px solid #D4A64A',
+              display: 'flex',
+              flexDirection: 'column',
+              maxHeight: '94vh'
             }}
           >
-            <video
-              src={`/api/video/stream/${previewClip.id}`}
-              controls
-              autoPlay
-              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-            />
-            <button
-              onClick={() => setPreviewClip(null)}
+            {/* Modal Header */}
+            <div
               style={{
-                position: 'absolute',
-                top: 12,
-                right: 12,
-                background: 'rgba(0,0,0,0.7)',
-                color: '#FFFFFF',
-                border: 'none',
-                borderRadius: '50%',
-                width: 32,
-                height: 32,
-                cursor: 'pointer',
-                fontSize: 16
+                padding: '12px 16px',
+                background: 'rgba(15, 23, 42, 0.95)',
+                borderBottom: '1px solid rgba(212, 166, 74, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
               }}
             >
-              ✕
-            </button>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#FFFFFF', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ color: '#D4A64A' }}>Part {previewClip.clip_index}</span>
+                  <span style={{ fontSize: 11, color: '#94A3B8' }}>/ {selectedJob?.completed_clips || 231}</span>
+                </div>
+                <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
+                  30s Vertical Reel • 9:16 • 4K 60FPS
+                </div>
+              </div>
+
+              {/* Prev / Next & Close */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  onClick={handlePrevClip}
+                  title="पिछली रील"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    padding: '4px 8px',
+                    borderRadius: 6,
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    color: '#FFFFFF',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <ChevronLeft size={14} />
+                  <span>पिछला</span>
+                </button>
+
+                <button
+                  onClick={handleNextClip}
+                  title="अगली रील"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    padding: '4px 8px',
+                    borderRadius: 6,
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    color: '#FFFFFF',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <span>अगला</span>
+                  <ChevronRight size={14} />
+                </button>
+
+                <button
+                  onClick={() => setPreviewClip(null)}
+                  style={{
+                    marginLeft: 6,
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    color: '#EF4444',
+                    borderRadius: 6,
+                    width: 28,
+                    height: 28,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    fontSize: 14,
+                    fontWeight: 800
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Video Player (9:16) */}
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                background: '#000000',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative'
+              }}
+            >
+              <video
+                key={previewClip.id}
+                src={`/api/video/stream/${previewClip.id}`}
+                controls
+                autoPlay
+                playsInline
+                style={{
+                  width: '100%',
+                  maxHeight: '68vh',
+                  aspectRatio: '9/16',
+                  objectFit: 'contain'
+                }}
+              />
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div
+              style={{
+                padding: '12px 16px',
+                background: 'rgba(15, 23, 42, 0.95)',
+                borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10
+              }}
+            >
+              <a
+                href={`/api/video/stream/${previewClip.id}`}
+                download={previewClip.clip_filename}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  padding: '9px 12px',
+                  borderRadius: 8,
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: '#FFFFFF',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  textDecoration: 'none'
+                }}
+              >
+                <Download size={14} />
+                <span>डाउनलोड करें</span>
+              </a>
+
+              <button
+                onClick={() => {
+                  const clip = previewClip;
+                  setPreviewClip(null);
+                  setClipToSend(clip);
+                  setTargetPlatform('youtube');
+                }}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  padding: '9px 12px',
+                  borderRadius: 8,
+                  background: 'linear-gradient(135deg, #D4A64A 0%, #B88628 100%)',
+                  border: 'none',
+                  color: '#0B1528',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: 'pointer'
+                }}
+              >
+                <Send size={14} />
+                <span>ऑटो-शेड्यूल करें</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
