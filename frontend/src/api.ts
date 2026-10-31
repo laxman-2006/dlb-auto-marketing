@@ -277,6 +277,12 @@ export const api = {
     }),
   getSocialSlots: (platform: 'youtube' | 'instagram' | 'facebook', date?: string) =>
     fetchJson<any>(`${API_BASE}/social/slots/${platform}${date ? `?date=${date}` : ''}`),
+  syncAndRolloverSlots: (platform?: 'youtube' | 'instagram' | 'facebook') =>
+    fetchJson<any>(`${API_BASE}/social/slots/sync-rollover`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform })
+    }),
   assignSocialSlot: (slotId: string, formData: FormData) =>
     fetchJson<any>(`${API_BASE}/social/slots/${slotId}/assign`, {
       method: 'POST',

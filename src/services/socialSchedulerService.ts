@@ -95,8 +95,160 @@ export class SocialSchedulerService {
   }
 
   /**
+   * Get current local date and time string (YYYY-MM-DD, HH:mm)
+   */
+  public static getCurrentDateTimeStr(): { dateStr: string; timeStr: string } {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return {
+      dateStr: `${year}-${month}-${day}`,
+      timeStr: `${hours}:${minutes}`
+    };
+  }
+
+  /**
+   * Strict Sequential Rollover:
+   * Ensures no reel is skipped if a slot passes un-published (or if account is not connected).
+   * Part 1 is ALWAYS placed in the very next upcoming slot!
+   * Part 2 is placed in the slot after that, Part 3 after that, etc.
+   */
+  public static syncAndRolloverSlots(targetPlatform?: 'youtube' | 'instagram' | 'facebook'): {
+    success: boolean;
+    rolledOverCount: number;
+    message: string;
+  } {
+    const { dateStr, timeStr } = this.getCurrentDateTimeStr();
+    const platforms: ('youtube' | 'instagram' | 'facebook')[] = targetPlatform
+      ? [targetPlatform]
+      : ['youtube', 'instagram', 'facebook'];
+
+    let totalRolledOver = 0;
+
+    for (const platform of platforms) {
+      const contentType = platform === 'facebook' ? 'REEL' : (platform === 'youtube' ? 'VIDEO' : 'REEL');
+
+      // 1. Get all clips from the completed job in video_clips (or from scheduled slots)
+      const latestJob = db.prepare(`
+        SELECT id FROM video_clip_jobs WHERE completed_clips > 0 ORDER BY created_at DESC LIMIT 1
+      `).get() as any;
+
+      let sortedClips: { path: string; name: string; partNum: number }[] = [];
+
+      const publishedPaths = new Set(
+        (db.prepare(`
+          SELECT media_path FROM social_schedules
+          WHERE platform = ? AND content_type = ? AND status = 'PUBLISHED' AND media_path IS NOT NULL
+        `).all(platform, contentType) as any[]).map((r) => r.media_path)
+      );
+
+      if (latestJob) {
+        const jobClips = db.prepare(`
+          SELECT * FROM video_clips WHERE job_id = ? ORDER BY clip_index ASC
+        `).all(latestJob.id) as any[];
+
+        sortedClips = jobClips
+          .filter((c) => !publishedPaths.has(c.clip_path))
+          .map((c) => ({
+            path: c.clip_path,
+            name: c.clip_filename,
+            partNum: c.clip_index
+          }));
+      } else {
+        const allScheduledSlots = db.prepare(`
+          SELECT ss.*, vc.clip_index
+          FROM social_schedules ss
+          LEFT JOIN video_clips vc ON ss.media_path = vc.clip_path
+          WHERE ss.platform = ? AND ss.content_type = ? AND ss.status = 'SCHEDULED' AND ss.media_path IS NOT NULL
+        `).all(platform, contentType) as any[];
+
+        const clipMap = new Map<string, { path: string; name: string; partNum: number }>();
+        for (const slot of allScheduledSlots) {
+          if (!clipMap.has(slot.media_path) && !publishedPaths.has(slot.media_path)) {
+            let part = slot.clip_index;
+            if (!part && slot.title) {
+              const m = slot.title.match(/Part\s*(\d+)/i);
+              if (m) part = parseInt(m[1], 10);
+            }
+            clipMap.set(slot.media_path, {
+              path: slot.media_path,
+              name: slot.media_name || path.basename(slot.media_path),
+              partNum: part || 1
+            });
+          }
+        }
+        sortedClips = Array.from(clipMap.values()).sort((a, b) => a.partNum - b.partNum);
+      }
+
+      if (sortedClips.length === 0) {
+        // Also check if any past un-published slots have stale media to clean
+        db.prepare(`
+          UPDATE social_schedules
+          SET media_path = NULL, media_name = NULL, title = '', caption = '', status = 'SCHEDULED'
+          WHERE platform = ? AND content_type = ? AND status = 'SCHEDULED'
+            AND (scheduled_date < ? OR (scheduled_date = ? AND scheduled_time <= ?))
+        `).run(platform, contentType, dateStr, dateStr, timeStr);
+        continue;
+      }
+
+      // 3. Clear ALL current scheduled (un-published) slots for this platform/type (keep PUBLISHED as-is!)
+      db.prepare(`
+        UPDATE social_schedules
+        SET media_path = NULL, media_name = NULL, title = '', caption = '', status = 'SCHEDULED'
+        WHERE platform = ? AND content_type = ? AND status = 'SCHEDULED'
+      `).run(platform, contentType);
+
+      // 4. Ensure plenty of future slots exist for all sorted clips
+      const daysNeeded = Math.min(120, Math.max(14, Math.ceil(sortedClips.length / 2) + 7));
+      this.ensureFutureSlots(daysNeeded);
+
+      // 5. Fetch upcoming future slots starting from the VERY NEXT upcoming slot
+      const futureSlots = db.prepare(`
+        SELECT * FROM social_schedules
+        WHERE platform = ? AND content_type = ? AND status = 'SCHEDULED'
+          AND (scheduled_date > ? OR (scheduled_date = ? AND scheduled_time > ?))
+        ORDER BY scheduled_date ASC, scheduled_time ASC
+      `).all(platform, contentType, dateStr, dateStr, timeStr) as ScheduleSlot[];
+
+      // 6. Assign clips strictly in FIFO order (Part 1 -> First upcoming slot, Part 2 -> Second upcoming, etc.)
+      for (let i = 0; i < sortedClips.length && i < futureSlots.length; i++) {
+        const slot = futureSlots[i];
+        const clip = sortedClips[i];
+        const partNum = clip.partNum;
+        const nextPart = partNum + 1;
+        const isYt = platform === 'youtube';
+
+        const title = isYt
+          ? `DLB Gaming Exclusive - Part ${partNum}`
+          : `DLB Auto Viral Reel - Part ${partNum}`;
+
+        const caption = isYt
+          ? `🔥 Part ${partNum} out now! Subscribe for Part ${nextPart} coming soon! #gaming #dlb #shorts #part${partNum}`
+          : `🔥 Watch Part ${partNum}! Part ${nextPart} releasing next. Follow DLB Auto! #reels #viral #gaming #part${partNum}`;
+
+        db.prepare(`
+          UPDATE social_schedules
+          SET title = ?, caption = ?, media_path = ?, media_name = ?, status = 'SCHEDULED'
+          WHERE id = ?
+        `).run(title, caption, clip.path, clip.name, slot.id);
+
+        totalRolledOver++;
+      }
+    }
+
+    return {
+      success: true,
+      rolledOverCount: totalRolledOver,
+      message: `सफलतापूर्वक सभी रील्स को अगले उपलब्ध स्लॉट्स (Part 1, Part 2...) में सिंक व रोल-ओवर कर दिया गया!`
+    };
+  }
+
+  /**
    * Auto-distribute sliced video clips sequentially into YouTube, Instagram, and Facebook slots
-   * with Part 1, Part 2, Part 3 ... Part N naming convention
+   * with Part 1, Part 2, Part 3 ... Part N naming convention starting strictly from NEXT FUTURE slot
    */
   public static autoDistributeJobClips(
     jobId: string,
@@ -110,81 +262,64 @@ export class SocialSchedulerService {
       return { success: false, distributedCount: 0, message: 'इस जॉब में कोई क्लिप नहीं मिली।' };
     }
 
+    const { dateStr, timeStr } = this.getCurrentDateTimeStr();
     const totalClips = clips.length;
-    const daysNeeded = Math.min(90, Math.max(14, Math.ceil(totalClips / 2) + 3));
+    const daysNeeded = Math.min(120, Math.max(14, Math.ceil(totalClips / 2) + 7));
     this.ensureFutureSlots(daysNeeded);
 
     let totalAssigned = 0;
 
     for (const platform of platforms) {
-      if (platform === 'youtube' || platform === 'instagram') {
-        const slots = db.prepare(`
-          SELECT * FROM social_schedules
-          WHERE platform = ? AND content_type = ? AND status = 'SCHEDULED'
-          ORDER BY scheduled_date ASC, scheduled_time ASC
-        `).all(platform, platform === 'youtube' ? 'VIDEO' : 'REEL') as ScheduleSlot[];
+      const contentType = platform === 'facebook' ? 'REEL' : (platform === 'youtube' ? 'VIDEO' : 'REEL');
 
-        let clipIdx = 0;
-        for (const slot of slots) {
-          if (clipIdx >= clips.length) break;
-          if (slot.media_path) continue; // Keep existing if already filled
+      // Clear any existing SCHEDULED (un-published) slots for this platform
+      db.prepare(`
+        UPDATE social_schedules
+        SET media_path = NULL, media_name = NULL, title = '', caption = '', status = 'SCHEDULED'
+        WHERE platform = ? AND content_type = ? AND status = 'SCHEDULED'
+      `).run(platform, contentType);
 
-          const clip = clips[clipIdx];
-          const partNum = clip.clip_index;
-          const nextPart = partNum + 1;
-          const isYt = platform === 'youtube';
+      // Fetch only upcoming FUTURE slots (never assign Part 1 to past slots)
+      const futureSlots = db.prepare(`
+        SELECT * FROM social_schedules
+        WHERE platform = ? AND content_type = ? AND status = 'SCHEDULED'
+          AND (scheduled_date > ? OR (scheduled_date = ? AND scheduled_time > ?))
+        ORDER BY scheduled_date ASC, scheduled_time ASC
+      `).all(platform, contentType, dateStr, dateStr, timeStr) as ScheduleSlot[];
 
-          const title = isYt
-            ? `DLB Gaming Exclusive - Part ${partNum}`
-            : `DLB Auto Viral Reel - Part ${partNum}`;
+      let clipIdx = 0;
+      for (const slot of futureSlots) {
+        if (clipIdx >= clips.length) break;
 
-          const caption = isYt
-            ? `🔥 Part ${partNum} out now! Subscribe for Part ${nextPart} coming soon! #gaming #dlb #shorts #part${partNum}`
-            : `🔥 Watch Part ${partNum}! Part ${nextPart} releasing next. Follow DLB Auto! #reels #viral #gaming #part${partNum}`;
+        const clip = clips[clipIdx];
+        const partNum = clip.clip_index;
+        const nextPart = partNum + 1;
+        const isYt = platform === 'youtube';
 
-          this.updateSlot(slot.id, {
-            title,
-            caption,
-            mediaPath: clip.clip_path,
-            mediaName: clip.clip_filename
-          });
+        const title = isYt
+          ? `DLB Gaming Exclusive - Part ${partNum}`
+          : `DLB Auto Viral Reel - Part ${partNum}`;
 
-          clipIdx++;
-          totalAssigned++;
-        }
-      } else if (platform === 'facebook') {
-        const fbSlots = db.prepare(`
-          SELECT * FROM social_schedules
-          WHERE platform = 'facebook' AND content_type = 'REEL' AND status = 'SCHEDULED'
-          ORDER BY scheduled_date ASC, scheduled_time ASC
-        `).all() as ScheduleSlot[];
+        const caption = isYt
+          ? `🔥 Part ${partNum} out now! Subscribe for Part ${nextPart} coming soon! #gaming #dlb #shorts #part${partNum}`
+          : `🔥 Watch Part ${partNum}! Part ${nextPart} releasing next. Follow DLB Auto! #reels #viral #gaming #part${partNum}`;
 
-        let clipIdx = 0;
-        for (const slot of fbSlots) {
-          if (clipIdx >= clips.length) break;
-          if (slot.media_path) continue;
+        this.updateSlot(slot.id, {
+          title,
+          caption,
+          mediaPath: clip.clip_path,
+          mediaName: clip.clip_filename
+        });
 
-          const clip = clips[clipIdx];
-          const partNum = clip.clip_index;
-          const nextPart = partNum + 1;
-
-          this.updateSlot(slot.id, {
-            title: `DLB Action Reel - Part ${partNum}`,
-            caption: `🔥 Part ${partNum} | Follow DLB Auto Marketing for Part ${nextPart}! #facebookreels #dlb #gaming #part${partNum}`,
-            mediaPath: clip.clip_path,
-            mediaName: clip.clip_filename
-          });
-
-          clipIdx++;
-          totalAssigned++;
-        }
+        clipIdx++;
+        totalAssigned++;
       }
     }
 
     return {
       success: true,
       distributedCount: totalAssigned,
-      message: `सफलतापूर्वक सभी ${totalClips} क्लिप्स को Part 1, Part 2... के अनुसार YouTube, Instagram और Facebook में ऑटो-शेड्यूल कर दिया गया!`
+      message: `सफलतापूर्वक सभी ${totalClips} क्लिप्स को आगामी स्लॉट्स में Part 1, Part 2... के अनुसार ऑटो-शेड्यूल कर दिया गया!`
     };
   }
 
@@ -231,6 +366,9 @@ export class SocialSchedulerService {
    */
   public static getSlots(platform: 'youtube' | 'instagram' | 'facebook', dateFilter?: string): ScheduleSlot[] {
     this.ensureDailySlots();
+    // Auto-rollover: automatically keeps un-published parts strictly sequential (Part 1 in upcoming slot)
+    this.syncAndRolloverSlots(platform);
+
     let query = `SELECT * FROM social_schedules WHERE platform = ?`;
     const params: any[] = [platform];
 
@@ -283,6 +421,15 @@ export class SocialSchedulerService {
 
     if (!slot.media_path && !slot.caption) {
       return { success: false, message: 'No media or text attached to this slot yet.' };
+    }
+
+    const accounts = this.getAccounts();
+    const isConnected = accounts[slot.platform]?.connected === true;
+    if (!isConnected) {
+      return {
+        success: false,
+        message: `⚠️ ${slot.platform.toUpperCase()} खाता अभी कनेक्ट नहीं है! कृपया सेटिंग्स (Settings) में जाकर खाता कनेक्ट करें। जब तक खाता कनेक्ट नहीं होगा, रील सुरक्षित रहेगी और कोई पार्ट मिस नहीं होगा।`
+      };
     }
 
     // In a live production environment, this calls the respective Graph API / YouTube Data API v3
@@ -360,11 +507,7 @@ export class SocialSchedulerService {
     this.ensureDailySlots();
 
     this.tickerInterval = setInterval(async () => {
-      const now = new Date();
-      const todayStr = now.toISOString().split('T')[0];
-      const currentHH = String(now.getHours()).padStart(2, '0');
-      const currentMM = String(now.getMinutes()).padStart(2, '0');
-      const currentTime = `${currentHH}:${currentMM}`;
+      const { dateStr: todayStr, timeStr: currentTime } = this.getCurrentDateTimeStr();
 
       const pendingSlots = db.prepare(`
         SELECT * FROM social_schedules
@@ -372,6 +515,14 @@ export class SocialSchedulerService {
       `).all(todayStr, currentTime) as ScheduleSlot[];
 
       for (const slot of pendingSlots) {
+        const accounts = this.getAccounts();
+        const isConnected = accounts[slot.platform]?.connected === true;
+        if (!isConnected) {
+          console.log(`[AutoUploader] ${slot.platform} account not connected. Preserving queue and rolling over to next slot.`);
+          this.syncAndRolloverSlots(slot.platform);
+          continue;
+        }
+
         console.log(`[AutoUploader] Ticker firing for ${slot.platform} slot ${slot.slot_label}...`);
         await this.publishSlotNow(slot.id);
       }

@@ -56,6 +56,7 @@ export const AutoVideoUploaderView: React.FC<AutoVideoUploaderViewProps> = ({
   const [selectedDate, setSelectedDate] = useState<string>('TODAY');
   const [autoDistributing, setAutoDistributing] = useState(false);
   const [bulkUploadingPosters, setBulkUploadingPosters] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const bulkPosterInputRef = useRef<HTMLInputElement>(null);
 
   // Filter tabs for Facebook: ALL | REELS (24) | POSTS (24)
@@ -208,8 +209,23 @@ export const AutoVideoUploaderView: React.FC<AutoVideoUploaderViewProps> = ({
       alert(`अपलोड में त्रुटि: ${err.message}`);
     } finally {
       setBulkUploadingPosters(false);
-      if (bulkPosterInputRef.current) bulkPosterInputRef.current.value = '';
       setTimeout(() => setActionMsg(null), 6000);
+    }
+  };
+
+  const handleSyncRollover = async () => {
+    try {
+      setSyncing(true);
+      const res = await api.syncAndRolloverSlots(activePlatform);
+      if (res?.success) {
+        setActionMsg(`✅ ${res.message}`);
+        await loadSlots();
+      }
+    } catch (err: any) {
+      alert(`सिंक त्रुटि: ${err.message}`);
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setActionMsg(null), 5000);
     }
   };
 
@@ -231,6 +247,12 @@ export const AutoVideoUploaderView: React.FC<AutoVideoUploaderViewProps> = ({
 
   // Calculate target metrics for current view
   const now = new Date();
+  // Identify the first upcoming slot that has a queued reel
+  const firstUpcomingSlot = slots.find((s) => {
+    const slotDateTime = new Date(`${s.scheduled_date}T${s.scheduled_time}:00`);
+    return slotDateTime.getTime() > now.getTime() && Boolean(s.media_path) && s.status === 'SCHEDULED';
+  });
+
   let uploadedCount = 0;
   let missedCount = 0;
   let scheduledCount = 0;
@@ -463,6 +485,28 @@ export const AutoVideoUploaderView: React.FC<AutoVideoUploaderViewProps> = ({
             )}
 
             <button
+              onClick={handleSyncRollover}
+              disabled={syncing}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 14px',
+                borderRadius: 8,
+                background: 'rgba(212, 166, 74, 0.12)',
+                border: '1px solid #D4A64A',
+                color: '#926014',
+                cursor: 'pointer',
+                fontWeight: 700,
+                fontSize: 12
+              }}
+              title="छूटे हुए स्लॉट्स को सिंक करें ताकि Part 1 आगामी स्लॉट में सबसे आगे सुरक्षित रहे"
+            >
+              <RefreshCw size={14} className={syncing ? 'spin-icon' : ''} />
+              <span>{syncing ? 'सिंक हो रहा है...' : '🔄 कतार सिंक करें (Rollover)'}</span>
+            </button>
+
+            <button
               onClick={loadSlots}
               style={{
                 display: 'flex',
@@ -502,6 +546,48 @@ export const AutoVideoUploaderView: React.FC<AutoVideoUploaderViewProps> = ({
             </button>
           </div>
         </header>
+
+        {/* Account Disconnected Safe-Queue Banner */}
+        {!isConnected && (
+          <div
+            style={{
+              margin: '12px 28px 0',
+              padding: '11px 16px',
+              borderRadius: 8,
+              background: '#FFFBEB',
+              border: '1px solid #FCD34D',
+              color: '#92400E',
+              fontSize: 12.5,
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <AlertCircle size={18} color="#D97706" />
+              <span>
+                <strong>{activePlatform.toUpperCase()} अभी कनेक्ट नहीं है:</strong> जब तक आप सेटिंग्स से अकाउंट कनेक्ट नहीं करते, कोई भी रील मिस या स्किप नहीं होगी — <strong style={{ color: '#B45309' }}>Part 1 हमेशा अगले स्लॉट में सुरक्षित रहेगा</strong> और अकाउंट कनेक्ट होते ही सबसे पहले अपलोड होगा!
+              </span>
+            </div>
+            <button
+              onClick={onNavigateSettings}
+              style={{
+                padding: '5px 12px',
+                borderRadius: 6,
+                background: '#D97706',
+                border: 'none',
+                color: '#FFFFFF',
+                fontWeight: 700,
+                fontSize: 11.5,
+                cursor: 'pointer'
+              }}
+            >
+              खाता कनेक्ट करें →
+            </button>
+          </div>
+        )}
 
         {/* Action / Notification Banner */}
         {actionMsg && (
@@ -720,6 +806,26 @@ export const AutoVideoUploaderView: React.FC<AutoVideoUploaderViewProps> = ({
                         {slot.scheduled_time} ({slot.scheduled_date})
                       </span>
                     </div>
+
+                    {slot.id === firstUpcomingSlot?.id && (
+                      <div
+                        style={{
+                          background: 'linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)',
+                          border: '1px solid #F59E0B',
+                          borderRadius: 6,
+                          padding: '3px 8px',
+                          marginBottom: 8,
+                          fontSize: 11,
+                          fontWeight: 800,
+                          color: '#92400E',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4
+                        }}
+                      >
+                        <span>🌟 अगला अपलोड (Next in Line: Part 1)</span>
+                      </div>
+                    )}
 
                     <div style={{ fontSize: 13.5, fontWeight: 800, color: '#1E293B', marginBottom: 6 }}>
                       {slot.slot_label}

@@ -47,6 +47,13 @@ router.get('/slots/:platform', (req: Request, res: Response) => {
   res.json({ success: true, platform, slots });
 });
 
+// POST /api/social/slots/sync-rollover - Force sequential rollover and queue synchronization
+router.post('/slots/sync-rollover', (req: Request, res: Response) => {
+  const platform = req.body.platform as 'youtube' | 'instagram' | 'facebook' | undefined;
+  const result = SocialSchedulerService.syncAndRolloverSlots(platform);
+  res.json(result);
+});
+
 // POST /api/social/slots/:slotId/assign - Assign media and details to slot
 router.post('/slots/:slotId/assign', upload.single('media'), (req: Request, res: Response): any => {
   const slotId = String(req.params.slotId);
