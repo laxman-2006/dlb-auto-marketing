@@ -1,9 +1,10 @@
 services:
   - type: web
     name: dlb-auto-marketing
-    env: docker
-    dockerfilePath: Dockerfile
+    runtime: docker
+    dockerfilePath: ./Dockerfile
     plan: free
+    region: singapore
     autoDeploy: true
     healthCheckPath: /api/health
     envVars:
@@ -18,12 +19,12 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: META_APP_ID
-        sync: false
+        value: ""
       - key: META_APP_SECRET
-        sync: false
+        value: ""
       - key: META_SYSTEM_USER_TOKEN
-        sync: false
+        value: ""
       - key: META_WABA_ID
-        sync: false
+        value: ""
       - key: META_PHONE_NUMBER_ID
-        sync: false
+        value: ""

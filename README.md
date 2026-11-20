@@ -2,6 +2,8 @@
 
 ### Production-Ready WhatsApp Marketing Management Application
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/laxman-2006/dlb-auto-marketing)
+
 **DLB AUTO MARKETING** is an enterprise-grade WhatsApp Marketing Management Application built for automotive dealerships. It connects directly with the official Meta WhatsApp Business Platform (Cloud API), ingests high-volume customer lists (supporting 25,000+ contacts with sub-second streaming/chunked parsing), enforces strict opt-in consent and Do-Not-Contact compliance, executes template-based campaigns via a durable transactional background delivery queue, and ingests real-time delivery/read webhooks and customer replies with 24-hour service window tracking.
 
 ---
