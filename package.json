@@ -9,6 +9,8 @@
     "dev:frontend": "npm --prefix frontend run dev",
     "build:frontend": "npm --prefix frontend run build",
     "build": "npm run build:frontend && tsc",
+    "tunnel": "scripts\\cloudflared.exe tunnel --url http://localhost:3001",
+    "live": "start-live.bat",
     "test": "tsx tests/run-all-tests.ts"
   },
   "keywords": [],
