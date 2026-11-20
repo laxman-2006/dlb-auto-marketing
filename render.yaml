@@ -3,13 +3,9 @@ services:
     name: dlb-auto-marketing
     env: docker
     dockerfilePath: Dockerfile
-    plan: starter
+    plan: free
     autoDeploy: true
     healthCheckPath: /api/health
-    disk:
-      name: dlb-storage
-      mountPath: /app/data
-      sizeGB: 1
     envVars:
       - key: PORT
         value: 3001
